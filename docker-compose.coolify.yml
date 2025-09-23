@@ -1,0 +1,58 @@
+version: "3.9"
+
+services:
+  detector:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: eletrons-vision:latest
+    restart: unless-stopped
+    environment:
+      APP_NAME: ${APP_NAME:-Eletrons Vision Service}
+      AUTH_TOKEN: ${AUTH_TOKEN}
+      N8N_WEBHOOK_URL: ${N8N_WEBHOOK_URL}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+      IP_WHITELIST: ${IP_WHITELIST}
+      MODELS_DIR: /app/models
+      DATA_DIR: /app/data
+      RUNS_DIR: /app/runs
+      ACTIVE_MODEL: /app/models/production.pt
+      MODEL_VARIANT: ${MODEL_VARIANT:-yolov8n.pt}
+      SAVE_ANNOTATIONS: ${SAVE_ANNOTATIONS:-true}
+    volumes:
+      - eletrons-models:/app/models
+      - eletrons-data:/app/data
+      - eletrons-runs:/app/runs
+    # Ports are generally not required when using Coolify's built-in proxy/Traefik.
+    # Uncomment to expose port directly if needed for local testing.
+    # ports:
+    #   - "8000:8000"
+
+    # GPU (optional): enable if your Coolify host has NVIDIA drivers and runtime configured.
+    # Note: For true GPU acceleration, ensure your Dockerfile base image has CUDA libs,
+    # and install a matching PyTorch CUDA wheel.
+    # gpus: all
+    # environment:
+    #   NVIDIA_VISIBLE_DEVICES: all
+    #   NVIDIA_DRIVER_CAPABILITIES: compute,utility
+
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2).status==200 else 1)\""]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+    # Enable proxy labels only if you prefer to manage Traefik routing via Compose.
+    # Coolify can manage the domain and routing automatically in the UI when you set the APP port to 8000.
+    # Example if you want to manage Traefik via Compose:
+    # labels:
+    #   - "traefik.enable=true"
+    #   - "traefik.http.services.eletrons.loadbalancer.server.port=8000"
+    #   - "traefik.http.routers.eletrons.rule=Host(`${DOMAIN}`)"
+    labels: {}
+
+volumes:
+  eletrons-models:
+  eletrons-data:
+  eletrons-runs:

@@ -1,0 +1,4 @@
+nc: 1
+names: [box]
+train: images/train
+val: images/val

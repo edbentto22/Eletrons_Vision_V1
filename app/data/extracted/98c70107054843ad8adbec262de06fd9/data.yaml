@@ -1,0 +1,7 @@
+path: /Users/edbentto/Eletrons_Vision_V1/app/data/extracted/98c70107054843ad8adbec262de06fd9
+train: /Users/edbentto/Eletrons_Vision_V1/app/data/extracted/98c70107054843ad8adbec262de06fd9/images
+val: /Users/edbentto/Eletrons_Vision_V1/app/data/extracted/98c70107054843ad8adbec262de06fd9/images
+test: /Users/edbentto/Eletrons_Vision_V1/app/data/extracted/98c70107054843ad8adbec262de06fd9/images
+
+nc: 12
+names: ['cabo_partido', 'caixa_derivacao', 'caixa_emenda_fibra', 'camera_monitoramento', 'coaxial', 'cordoalha', 'drop', 'fibra_optica', 'rede_telecom_altura_mt', 'rede_telecom_altura_rede_bt', 'reserva_tecnica', 'tronco_metalico']

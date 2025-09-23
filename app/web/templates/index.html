@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{ app_name }}</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <h1>{{ app_name }}</h1>
+    <p>Modelo ativo: {{ active_model if active_model else 'Nenhum (usando variante padrão)' }}</p>
+  </header>
+  <main>
+    <section>
+      <h2>Últimas detecções</h2>
+      <div class="grid">
+        {% for det in detections %}
+        <div class="card">
+          {% if det.annotated_url %}
+          <img src="{{ det.annotated_url }}" alt="Detecção" />
+          {% endif %}
+          <pre class="json">{{ det | tojson(indent=2) }}</pre>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+    <section>
+      <h2>Fila de Jobs</h2>
+      <table>
+        <thead>
+          <tr><th>Job ID</th><th>Status</th><th>Best.pt</th><th>Métricas</th></tr>
+        </thead>
+        <tbody>
+          {% for job in jobs %}
+          <tr>
+            <td>{{ job.job_id }}</td>
+            <td>{{ job.status }}</td>
+            <td>{{ job.best_pt }}</td>
+            <td><pre class="json">{{ job.metrics | tojson(indent=2) }}</pre></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+  </main>
+  <footer>
+    <p>Eletrons Vision Service - YOLOv8 + FastAPI</p>
+  </footer>
+</body>
+</html>

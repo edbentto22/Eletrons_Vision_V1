@@ -1,0 +1,37 @@
+version: "3.9"
+services:
+  detector:
+    build: .
+    image: eletrons-vision:latest
+    container_name: eletrons-vision
+    restart: unless-stopped
+    environment:
+      - APP_NAME=Eletrons Vision Service
+      - AUTH_TOKEN=${AUTH_TOKEN}
+      - N8N_WEBHOOK_URL=${N8N_WEBHOOK_URL}
+      - CORS_ORIGINS=${CORS_ORIGINS}
+      - IP_WHITELIST=${IP_WHITELIST}
+      - MODELS_DIR=/app/models
+      - DATA_DIR=/app/data
+      - RUNS_DIR=/app/runs
+      - ACTIVE_MODEL=/app/models/production.pt
+      - MODEL_VARIANT=yolov8n.pt
+      - SAVE_ANNOTATIONS=true
+    volumes:
+      - ./app/models:/app/models
+      - ./app/data:/app/data
+      - ./app/runs:/app/runs
+    ports:
+      - "8000:8000"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    # Labels Traefik (opcional quando publicar via proxy do Coolify)
+    # labels:
+    #   - "traefik.enable=true"
+    #   - "traefik.http.routers.eletrons.rule=Host(`${DOMAIN}`)"
+    #   - "traefik.http.services.eletrons.loadbalancer.server.port=8000"

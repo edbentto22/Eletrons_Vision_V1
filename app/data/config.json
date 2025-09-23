@@ -1,0 +1,1 @@
+{"N8N_WEBHOOK_URL": "https://n8n.catalise.me/webhook-test/fotos-eletrons", "N8N_WEBHOOK_ENABLED": true, "N8N_WEBHOOK_INCLUDE_IMAGE": false, "WEBHOOK_INFER_ENABLED": true, "WEBHOOK_INFER_TOKEN": null, "WEBHOOK_INFER_PATH": "infer", "CONF_DEFAULT": 0.25, "IOU_DEFAULT": 0.45, "IMGSZ_DEFAULT": 640, "DEVICE_DEFAULT": "cpu"}

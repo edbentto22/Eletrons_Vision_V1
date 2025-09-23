@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{ app_name }} — Configurações</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <style>
+    .layout { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }
+    .sidebar { background: #0b0f14; border-right: 1px solid #2f3336; padding: 16px; }
+    .sidebar h2 { font-size: 18px; margin: 0 0 12px; }
+    .sidebar a { display: block; color: #ffffff; text-decoration: none; padding: 8px 6px; border-radius: 6px; }
+    .sidebar a:hover { background: #11161c; }
+    .sidebar a.active { background: #1d2733; }
+    .content { padding: 16px; }
+    .section { margin-bottom: 24px; background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; }
+    .section h2 { margin: 0 0 16px; font-size: 18px; border-bottom: 1px solid #30363d; padding-bottom: 8px; }
+    .form-row { display: grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); gap: 10px; margin-bottom: 16px; }
+    .form-group { margin-bottom: 16px; }
+    .form-group label { display: block; margin-bottom: 4px; color: #ffffff; font-size: 14px; }
+    .input { background: #0b0f14; color: #ffffff; border: 1px solid #2f3336; border-radius: 6px; padding: 8px; width: 100%; }
+    .btn { background: #2563eb; color: #fff; border: none; border-radius: 6px; padding: 8px 12px; cursor: pointer; }
+    .btn.secondary { background: #374151; }
+    .muted { color: #ffffff; font-size: 12px; }
+    .row { display:flex; gap:8px; align-items:center; }
+    .checkbox-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .checkbox-row input[type="checkbox"] { margin: 0; }
+    .tabs { display: flex; border-bottom: 1px solid #30363d; margin-bottom: 16px; }
+    .tab { padding: 8px 16px; cursor: pointer; border-bottom: 2px solid transparent; }
+    .tab.active { border-color: #2563eb; color: #ffffff; }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+    .table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+    .table th, .table td { border: 1px solid #2f3336; padding: 6px; }
+    .pill { padding: 3px 8px; border-radius: 999px; font-size: 12px; }
+    .pill.in { background: #064e3b; color: #a7f3d0; }
+    .pill.out { background: #1e40af; color: #bfdbfe; }
+    .pill.error { background: #7c2d12; color: #ffedd5; }
+    .endpoint { font-family: monospace; font-size: 12px; }
+    .copy-btn { background: #374151; border: none; color: #ffffff; border-radius: 4px; padding: 2px 6px; cursor: pointer; font-size: 12px; }
+    .copy-btn:hover { background: #4b5563; }
+    .webhook-url { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+    .webhook-url code { background: #0b0f14; padding: 6px; border-radius: 4px; flex: 1; overflow-x: auto; }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <h2>EV Dashboard</h2>
+      <nav>
+        <a href="/panel">Visão Geral</a>
+        <a href="/settings" class="active">Configurações</a>
+        <a href="/">Início simples</a>
+        <a href="/docs" target="_blank">API Docs</a>
+      </nav>
+      <div class="section">
+        <p class="muted">Modelo ativo:</p>
+        <p>{{ active_model if active_model else 'Nenhum' }}</p>
+      </div>
+    </aside>
+    <main class="content">
+      <header class="row" style="justify-content: space-between;">
+        <h1>Configurações</h1>
+        <a class="btn secondary" href="/metrics" target="_blank">Ver Métricas</a>
+      </header>
+
+      <div class="tabs">
+        <div class="tab active" data-tab="webhooks">Webhooks</div>
+        <div class="tab" data-tab="inference">Inferência</div>
+        <div class="tab" data-tab="logs">Logs de Webhook</div>
+      </div>
+
+      <div class="tab-content active" data-tab="webhooks">
+        <section class="section">
+          <h2>Webhook de Entrada (Recebe Imagens)</h2>
+          <form id="webhook-in-form" class="form-group">
+            <div class="checkbox-row">
+              <input type="checkbox" id="WEBHOOK_INFER_ENABLED" name="WEBHOOK_INFER_ENABLED" {{ 'checked' if cfg.WEBHOOK_INFER_ENABLED else '' }} />
+              <label for="WEBHOOK_INFER_ENABLED">Habilitar webhook de entrada</label>
+            </div>
+            
+            <div class="form-group">
+              <label for="WEBHOOK_INFER_PATH">Caminho do endpoint (após /webhook/)</label>
+              <input class="input" type="text" id="WEBHOOK_INFER_PATH" name="WEBHOOK_INFER_PATH" placeholder="infer" value="{{ cfg.WEBHOOK_INFER_PATH }}" pattern="^[a-zA-Z0-9_-]+$" />
+              <p class="muted">Apenas letras, números, traços e underscores</p>
+            </div>
+            
+            <div class="form-group">
+              <label for="WEBHOOK_INFER_TOKEN">Token de segurança (opcional)</label>
+              <input class="input" type="text" id="WEBHOOK_INFER_TOKEN" name="WEBHOOK_INFER_TOKEN" placeholder="Token para autenticação" value="{{ cfg.WEBHOOK_INFER_TOKEN if cfg.WEBHOOK_INFER_TOKEN }}" />
+              <p class="muted">Se definido, requisições precisam incluir header Authorization: Bearer &lt;token&gt;</p>
+            </div>
+            
+            <div class="webhook-url">
+              <span>URL:</span>
+              <code id="webhook-url">{{ base_url }}webhook/{{ cfg.WEBHOOK_INFER_PATH }}</code>
+              <button type="button" class="copy-btn" onclick="copyToClipboard('webhook-url')">Copiar</button>
+            </div>
+            
+            <button class="btn" type="submit">Salvar</button>
+          </form>
+        </section>
+
+        <section class="section">
+          <h2>Webhook de Saída (Envia para n8n)</h2>
+          <form id="webhook-out-form" class="form-group">
+            <div class="checkbox-row">
+              <input type="checkbox" id="N8N_WEBHOOK_ENABLED" name="N8N_WEBHOOK_ENABLED" {{ 'checked' if cfg.N8N_WEBHOOK_ENABLED else '' }} />
+              <label for="N8N_WEBHOOK_ENABLED">Habilitar envio para n8n</label>
+            </div>
+            
+            <div class="form-group">
+              <label for="N8N_WEBHOOK_URL">URL do webhook n8n</label>
+              <input class="input" type="url" id="N8N_WEBHOOK_URL" name="N8N_WEBHOOK_URL" placeholder="https://n8n.example.com/webhook/..." value="{{ cfg.N8N_WEBHOOK_URL if cfg.N8N_WEBHOOK_URL }}" />
+            </div>
+            
+            <div class="checkbox-row">
+              <input type="checkbox" id="N8N_WEBHOOK_INCLUDE_IMAGE" name="N8N_WEBHOOK_INCLUDE_IMAGE" {{ 'checked' if cfg.N8N_WEBHOOK_INCLUDE_IMAGE else '' }} />
+              <label for="N8N_WEBHOOK_INCLUDE_IMAGE">Incluir imagem em base64 no payload</label>
+            </div>
+            
+            <button class="btn" type="submit">Salvar</button>
+          </form>
+        </section>
+      </div>
+
+      <div class="tab-content" data-tab="inference">
+        <section class="section">
+          <h2>Parâmetros de Inferência</h2>
+          <form id="inference-form" class="form-group">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="CONF_DEFAULT">Confiança (0.01-0.99)</label>
+                <input class="input" type="number" step="0.01" min="0.01" max="0.99" id="CONF_DEFAULT" name="CONF_DEFAULT" value="{{ cfg.CONF_DEFAULT }}" />
+              </div>
+              
+              <div class="form-group">
+                <label for="IOU_DEFAULT">IoU (0.01-0.99)</label>
+                <input class="input" type="number" step="0.01" min="0.01" max="0.99" id="IOU_DEFAULT" name="IOU_DEFAULT" value="{{ cfg.IOU_DEFAULT }}" />
+              </div>
+              
+              <div class="form-group">
+                <label for="IMGSZ_DEFAULT">Tamanho da imagem (64-1536)</label>
+                <input class="input" type="number" min="64" max="1536" id="IMGSZ_DEFAULT" name="IMGSZ_DEFAULT" value="{{ cfg.IMGSZ_DEFAULT }}" />
+              </div>
+              
+              <div class="form-group">
+                <label for="DEVICE_DEFAULT">Dispositivo (cuda:0, cpu)</label>
+                <input class="input" type="text" id="DEVICE_DEFAULT" name="DEVICE_DEFAULT" placeholder="cuda:0 / cpu" value="{{ cfg.DEVICE_DEFAULT if cfg.DEVICE_DEFAULT }}" />
+              </div>
+            </div>
+            
+            <button class="btn" type="submit">Salvar</button>
+          </form>
+        </section>
+      </div>
+
+      <div class="tab-content" data-tab="logs">
+        <section class="section">
+          <h2>Logs de Webhook</h2>
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Timestamp</th>
+                <th>Direção</th>
+                <th>Endpoint</th>
+                <th>Status</th>
+                <th>Payload</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for log in webhook_logs %}
+              <tr>
+                <td>{{ log.timestamp }}</td>
+                <td>
+                  {% if log.direction == 'in' %}
+                    <span class="pill in">Entrada</span>
+                  {% else %}
+                    <span class="pill out">Saída</span>
+                  {% endif %}
+                </td>
+                <td class="endpoint">{{ log.endpoint }}</td>
+                <td>
+                  {% if log.status == 200 %}
+                    <span class="pill in">{{ log.status }}</span>
+                  {% elif log.status == 0 %}
+                    <span class="pill error">Erro</span>
+                  {% else %}
+                    {{ log.status }}
+                  {% endif %}
+                </td>
+                <td><pre class="json">{{ log.payload_summary | tojson(indent=2) }}</pre></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% if not webhook_logs %}
+          <p class="muted">Nenhum log de webhook registrado ainda.</p>
+          {% endif %}
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    // Tabs
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        
+        tab.classList.add('active');
+        document.querySelector(`.tab-content[data-tab="${tab.dataset.tab}"]`).classList.add('active');
+      });
+    });
+    
+    // Copiar URL para clipboard
+    function copyToClipboard(elementId) {
+      const el = document.getElementById(elementId);
+      const text = el.textContent;
+      
+      navigator.clipboard.writeText(text).then(() => {
+        const btn = document.querySelector(`#${elementId} + .copy-btn`);
+        const originalText = btn.textContent;
+        btn.textContent = 'Copiado!';
+        setTimeout(() => { btn.textContent = originalText; }, 2000);
+      });
+    }
+    
+    // Atualizar URL do webhook ao digitar
+    document.getElementById('WEBHOOK_INFER_PATH').addEventListener('input', (e) => {
+      const path = e.target.value || 'infer';
+      document.getElementById('webhook-url').textContent = `{{ base_url }}webhook/${path}`;
+    });
+    
+    // Formulários
+    async function submitForm(formId, successMsg) {
+      const form = document.getElementById(formId);
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const formData = new FormData(form);
+        const data = {};
+        
+        // Processar checkboxes e outros campos
+        for (const [key, value] of formData.entries()) {
+          if (form.elements[key].type === 'checkbox') {
+            data[key] = form.elements[key].checked;
+          } else if (value === '') {
+            data[key] = null;
+          } else {
+            data[key] = value;
+          }
+        }
+        
+        // Adicionar checkboxes não marcados (que não aparecem no FormData)
+        form.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+          if (!formData.has(cb.name)) {
+            data[cb.name] = false;
+          }
+        });
+        
+        const tok = localStorage.getItem('AUTH') || '';
+        const auth = tok ? (tok.startsWith('Bearer ') ? tok : ('Bearer ' + tok)) : '';
+        
+        try {
+          const res = await fetch('/config', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': auth
+            },
+            body: JSON.stringify(data)
+          });
+          
+          if (res.ok) {
+            alert(successMsg || 'Configurações salvas com sucesso!');
+            location.reload();
+          } else {
+            const errorText = await res.text();
+            alert(`Erro ao salvar: ${res.status} ${errorText}`);
+          }
+        } catch (err) {
+          alert(`Erro: ${err.message}`);
+        }
+      });
+    }
+    
+    // Inicializar formulários
+    submitForm('webhook-in-form', 'Configurações do webhook de entrada salvas!');
+    submitForm('webhook-out-form', 'Configurações do webhook de saída salvas!');
+    submitForm('inference-form', 'Parâmetros de inferência salvos!');
+  </script>
+</body>
+</html>
