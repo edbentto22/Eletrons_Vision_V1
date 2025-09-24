@@ -800,6 +800,49 @@
         </div>
       </section>
 
+      <section class="section" id="inferenceUpload">
+        <h2>Inferência (Upload)</h2>
+        <form id="inferForm" class="form-row" onsubmit="return false;">
+          <div class="form-group">
+            <label for="inferImages">Imagens para Inferência</label>
+            <input class="input" type="file" id="inferImages" name="inferImages" accept="image/*" multiple />
+            <p class="muted">Selecione uma ou mais imagens</p>
+          </div>
+          <div class="form-group">
+            <label for="registro">Registro (número)</label>
+            <input class="input" type="number" id="registro" name="registro" placeholder="Ex: 12345" />
+          </div>
+          <div class="form-group">
+            <label for="ponto">Ponto (número)</label>
+            <input class="input" type="number" id="ponto" name="ponto" placeholder="Ex: 1" />
+          </div>
+          <div class="form-group">
+            <label for="sheet_id">ID da Planilha</label>
+            <input class="input" type="text" id="sheet_id" name="sheet_id" placeholder="Ex: 1AbCDef..." />
+          </div>
+          <div class="form-group">
+            <label for="preproc_imgsz">Tamanho para Pré-processamento</label>
+            <input class="input" type="number" id="preproc_imgsz" name="preproc_imgsz" value="{{ cfg.IMGSZ_DEFAULT }}" />
+            <p class="muted">Imagens serão redimensionadas (letterbox) para este tamanho quadrado</p>
+          </div>
+          <div class="form-group">
+            <label class="checkbox-row">
+              <input type="checkbox" id="send_webhook_now" />
+              <span>Enviar diretamente para webhook n8n após a inferência</span>
+            </label>
+          </div>
+          <div class="form-group" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+            <button class="btn" type="button" onclick="preprocessSelectedImages()">Pré-processar</button>
+            <button class="btn secondary" type="button" onclick="renameProcessedImages()">Renomear Imagens</button>
+            <button class="btn" type="button" onclick="submitInference()">Enviar para Inferência (YOLO)</button>
+            <button class="btn secondary" type="button" onclick="sendToN8N()">Enviar para Webhook (n8n)</button>
+          </div>
+          <div class="form-group">
+            <p class="muted" id="inferStatus">Aguardando imagens...</p>
+          </div>
+        </form>
+      </section>
+
       <section class="section">
         <h2>Treinamento (Upload)</h2>
         <form class="form-row" action="/panel/upload" method="post" enctype="multipart/form-data">
@@ -941,6 +984,12 @@
             <span class="progress-percentage" id="epochPercentage">0%</span>
           </div>
           <div class="progress-bar-container">
+            <!-- Barra percentual linear do treinamento -->
+            <div class="progress-bar" aria-label="Progresso percentual do treinamento">
+              <div class="progress" id="epochProgress" style="width: 0%"></div>
+              <span class="progress-text" id="epochProgressText">0%</span>
+            </div>
+            <!-- Gráfico por época -->
             <div class="progress-bar">
               <canvas id="progressBarChart" height="40"></canvas>
             </div>
@@ -2092,12 +2141,14 @@
                 const epochProgressElement = document.getElementById('epochProgress');
                 const epochPercentageElement = document.getElementById('epochPercentage');
                 const overallProgressElement = document.getElementById('overallProgress');
+                const epochProgressTextElement = document.getElementById('epochProgressText');
                 
                 if (currentEpochElement) currentEpochElement.textContent = currentEpoch;
                 if (currentEpochDetailElement) currentEpochDetailElement.textContent = currentEpoch;
                 if (epochProgressElement) epochProgressElement.style.width = `${progressPercentage}%`;
                 if (epochPercentageElement) epochPercentageElement.textContent = `${progressPercentage.toFixed(1)}%`;
                 if (overallProgressElement) overallProgressElement.textContent = `${progressPercentage.toFixed(0)}%`;
+                if (epochProgressTextElement) epochProgressTextElement.textContent = `${progressPercentage.toFixed(1)}%`;
                 
                 // Atualizar círculo de progresso
                 updateProgressCircle(progressPercentage);
@@ -2369,6 +2420,135 @@
           });
           if (allCharts.system.network) allCharts.system.network.destroy();
         });
+      </script>
+
+      <script>
+      // --- Inferência Upload Helpers ---
+      let preprocessedFiles = [];
+      let lastInferenceResult = null;
+
+      function updateInferStatus(msg) {
+        const el = document.getElementById('inferStatus');
+        if (el) el.textContent = msg;
+      }
+
+      async function preprocessSelectedImages() {
+        const input = document.getElementById('inferImages');
+        const sizeEl = document.getElementById('preproc_imgsz');
+        const size = parseInt(sizeEl ? sizeEl.value : '640');
+        if (!input || !input.files || input.files.length === 0) {
+          updateInferStatus('Nenhuma imagem selecionada.');
+          return;
+        }
+        updateInferStatus('Pré-processando imagens...');
+        preprocessedFiles = [];
+        for (const file of input.files) {
+          const imgBitmap = await createImageBitmap(file);
+          const canvas = document.createElement('canvas');
+          canvas.width = size;
+          canvas.height = size;
+          const ctx = canvas.getContext('2d');
+          ctx.fillStyle = '#000';
+          ctx.fillRect(0, 0, size, size);
+          const scale = Math.min(size / imgBitmap.width, size / imgBitmap.height);
+          const newW = Math.round(imgBitmap.width * scale);
+          const newH = Math.round(imgBitmap.height * scale);
+          const dx = Math.round((size - newW) / 2);
+          const dy = Math.round((size - newH) / 2);
+          ctx.drawImage(imgBitmap, 0, 0, imgBitmap.width, imgBitmap.height, dx, dy, newW, newH);
+          const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.92));
+          const processedFile = new File([blob], file.name, { type: 'image/jpeg' });
+          preprocessedFiles.push(processedFile);
+        }
+        updateInferStatus(`Pré-processadas ${preprocessedFiles.length} imagens.`);
+      }
+
+      function renameProcessedImages() {
+        const regEl = document.getElementById('registro');
+        const registro = regEl ? regEl.value : '';
+        if (!registro) {
+          updateInferStatus('Informe o Registro para renomear.');
+          return;
+        }
+        if (!preprocessedFiles.length) {
+          updateInferStatus('Não há imagens pré-processadas para renomear.');
+          return;
+        }
+        const renamed = [];
+        for (let i = 0; i < preprocessedFiles.length; i++) {
+          const file = preprocessedFiles[i];
+          const newName = `${registro}-${i + 1}.jpg`;
+          const renamedFile = new File([file], newName, { type: file.type });
+          renamed.push(renamedFile);
+        }
+        preprocessedFiles = renamed;
+        updateInferStatus(`Renomeadas ${preprocessedFiles.length} imagens.`);
+      }
+
+      async function submitInference() {
+        const registro = document.getElementById('registro')?.value || null;
+        const ponto = document.getElementById('ponto')?.value || null;
+        const sheet_id = document.getElementById('sheet_id')?.value || null;
+        const send_webhook = document.getElementById('send_webhook_now')?.checked || false;
+
+        let filesToSend = preprocessedFiles;
+        if (!filesToSend.length) {
+          const input = document.getElementById('inferImages');
+          if (!input || !input.files || input.files.length === 0) {
+            updateInferStatus('Nenhuma imagem disponível para enviar.');
+            return;
+          }
+          filesToSend = Array.from(input.files);
+        }
+
+        const form = new FormData();
+        for (const f of filesToSend) form.append('files', f);
+        if (registro && String(registro).trim() !== '') form.append('registro', String(registro).trim());
+        if (ponto && String(ponto).trim() !== '') form.append('ponto', String(ponto).trim());
+        if (sheet_id && String(sheet_id).trim() !== '') form.append('sheet_id', String(sheet_id).trim());
+        form.append('send_webhook', String(send_webhook));
+
+        updateInferStatus('Enviando para inferência...');
+        try {
+          const resp = await fetch('/infer', { method: 'POST', body: form });
+          const text = await resp.text();
+          if (!resp.ok) throw new Error(text || `HTTP ${resp.status}`);
+          const data = JSON.parse(text);
+          lastInferenceResult = data;
+          updateInferStatus(`Inferência concluída. ${data.count} imagens processadas.`);
+        } catch (e) {
+          updateInferStatus('Falha na inferência: ' + (e && e.message ? e.message : e));
+          console.error('Inferência erro:', e);
+        }
+      }
+
+      async function sendToN8N() {
+        if (!lastInferenceResult) {
+          updateInferStatus('Nenhum resultado de inferência disponível para enviar.');
+          return;
+        }
+        updateInferStatus('Enviando resultados ao n8n...');
+        try {
+          const payload = {
+            summary: lastInferenceResult.params || {},
+            results: lastInferenceResult.results || [],
+            meta: {
+              registro: document.getElementById('registro')?.value || null,
+              ponto: document.getElementById('ponto')?.value || null,
+              sheet_id: document.getElementById('sheet_id')?.value || null
+            }
+          };
+          const resp = await fetch('/webhook/send', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          if (!resp.ok) throw new Error(await resp.text());
+          updateInferStatus('Webhook enviado com sucesso.');
+        } catch (e) {
+          updateInferStatus('Falha ao enviar webhook: ' + e.message);
+        }
+      }
       </script>
 
       <section class="section">

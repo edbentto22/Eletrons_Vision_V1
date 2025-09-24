@@ -3,7 +3,7 @@ import uuid
 import asyncio
 import time
 import base64
-from typing import List, Optional
+from typing import List, Optional, Union
 
 from fastapi import FastAPI, UploadFile, File, Body, Query, Request, Depends, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,6 +16,7 @@ import httpx
 from .config import settings
 from .schemas import InferResponse, TrainParams, TrainStatus, ValidateRequest, ExportRequest, PromoteRequest, HealthResponse, MetricsResponse, UIConfigRequest, UIConfigResponse, WebhookLogResponse
 from .yolo_service import infer as yolo_infer, start_training, validate_model, promote_model, export_model, _jobs, register_job_task, cancel_job_task, clear_jobs
+from .yolo_service import send_n8n_webhook
 from .state import load_config, save_config
 
 app = FastAPI(title=settings.APP_NAME)
@@ -86,29 +87,34 @@ async def metrics():
 @app.post("/infer", response_model=InferResponse)
 async def infer_endpoint(
     request: Request,
-    files: Optional[List[UploadFile]] = File(default=None),
-    urls: Optional[List[str]] = Body(default=None),
+    files: List[UploadFile] = File(...),
+    urls: Optional[List[str]] = Form(default=None),
     conf: float = Query(default=load_config().get("CONF_DEFAULT", 0.25), ge=0.01, le=0.99),
     iou: float = Query(default=load_config().get("IOU_DEFAULT", 0.45), ge=0.01, le=0.99),
     imgsz: int = Query(default=load_config().get("IMGSZ_DEFAULT", 640), ge=64, le=1536),
-    device: Optional[str] = Query(default=None)
+    device: Optional[str] = Query(default=None),
+    registro: Optional[int] = Form(default=None),
+    ponto: Optional[int] = Form(default=None),
+    sheet_id: Optional[str] = Form(default=None),
+    send_webhook: bool = Form(default=False)
 ):
     # Gather local paths
     paths: List[str] = []
+    infer_dir = os.path.join(settings.DATA_DIR, 'infer')
+    os.makedirs(infer_dir, exist_ok=True)
     # Uploads
-    if files:
-        for f in files:
-            fid = uuid.uuid4().hex
-            out_path = os.path.join(settings.DATA_DIR, 'infer', f"{fid}-{f.filename}")
-            with open(out_path, 'wb') as w:
-                w.write(await f.read())
-            paths.append(out_path)
+    for f in files:
+        fid = uuid.uuid4().hex
+        out_path = os.path.join(infer_dir, f"{fid}-{f.filename}")
+        with open(out_path, 'wb') as w:
+            w.write(await f.read())
+        paths.append(out_path)
     # URLs
     if urls:
         async with httpx.AsyncClient(timeout=20) as client:
             for u in urls:
                 fid = uuid.uuid4().hex
-                out_path = os.path.join(settings.DATA_DIR, 'infer', f"{fid}.jpg")
+                out_path = os.path.join(infer_dir, f"{fid}.jpg")
                 try:
                     resp = await client.get(u)
                     resp.raise_for_status()
@@ -120,7 +126,7 @@ async def infer_endpoint(
     if not paths:
         raise HTTPException(status_code=400, detail="Nenhuma imagem enviada ou URL válida")
 
-    result = await yolo_infer(paths, conf=conf, iou=iou, imgsz=imgsz, device=device)
+    result = await yolo_infer(paths, conf=conf, iou=iou, imgsz=imgsz, device=device, send_webhook=send_webhook, extra_meta={"registro": registro, "ponto": ponto, "sheet_id": sheet_id})
     _metrics['inferences'] += 1
     _metrics['lat_total_ms'] += result.get('latency_ms', 0.0) or 0.0
     _metrics['last_latency_ms'] = result.get('latency_ms')
@@ -379,6 +385,16 @@ async def settings_page(request: Request):
         "webhook_logs": webhook_logs,
         "base_url": str(request.base_url)
     })
+
+@app.post("/webhook/send")
+async def webhook_send_endpoint(payload: dict = Body(...)):
+    """Endpoint para enviar manualmente os resultados ao webhook do n8n.
+    Espera um payload contendo 'results' (lista) e opcionalmente 'summary' e 'meta'."""
+    try:
+        await send_n8n_webhook(payload)
+        return {"status": "sent"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Falha ao enviar webhook: {str(e)}")
 
 @app.get("/system/stats")
 async def get_system_stats():

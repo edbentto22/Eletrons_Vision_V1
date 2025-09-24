@@ -1,0 +1,96 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.env
+.venv
+.env*/
+.venv*/
+*.env
+*.env.*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDEs and editors
+.vscode/
+.idea/
+*.code-workspace
+
+# Python packaging
+build/
+dist/
+.eggs/
+*.egg-info/
+*.egg
+
+# Logs and debug
+*.log
+logs/
+
+# Notebooks checkpoints
+.ipynb_checkpoints/
+
+# Cache
+.cache/
+*.cache/
+.pytest_cache/
+__pypackages__/
+
+# Ultralytics/YOLO artifacts
+runs/
+wandb/
+
+# Datasets and media (keep configs only)
+app/data/**/*.jpg
+app/data/**/*.jpeg
+app/data/**/*.png
+app/data/**/*.bmp
+app/data/**/*.gif
+app/data/**/*.mp4
+app/data/**/*.avi
+app/data/**/*.mov
+app/data/**/*.zip
+app/data/**/*.tar
+app/data/**/*.tar.gz
+app/data/**/*.webp
+app/data/**/images/
+app/data/**/labels/
+app/data/**/annotations/
+# Keep dataset metadata files
+!app/data/**/data.yaml
+!app/data/**/classes.txt
+!app/data/**/notes.json
+
+# Models and large artifacts (use LFS if versionar)
+app/models/*.pt
+app/models/*.onnx
+app/models/*.engine
+app/models/*.tensorrt
+app/models/**/*.pt
+app/models/**/*.onnx
+app/models/**/*.engine
+app/models/**/*.tensorrt
+
+# Exports
+YOLOv8/**/weights/
+YOLOv8/**/labels*.jpg
+
+# Docker and compose overrides
+*.local.yml
+
+# FastAPI/Uvicorn artefacts
+*.pid
+
+# Secrets
+secrets*/
+*.key
+*.pem
+*.crt
+
+# Node/web build (if any)
+app/web/static/build/
+app/web/static/dist/

@@ -98,7 +98,7 @@ def _annotate_and_save(result: Any, image_id: str) -> Optional[str]:
     except Exception:
         return None
 
-async def infer(paths: List[str], conf: float, iou: float, imgsz: int, device: Optional[str]) -> Dict[str, Any]:
+async def infer(paths: List[str], conf: float, iou: float, imgsz: int, device: Optional[str], send_webhook: bool = True, extra_meta: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     model = _load_yolo_model(device)
     t0 = time.time()
     results = model.predict(paths, conf=conf, iou=iou, imgsz=imgsz, device=device, stream=False, verbose=False)
@@ -126,15 +126,25 @@ async def infer(paths: List[str], conf: float, iou: float, imgsz: int, device: O
         json.dump(existing, open(log_path, 'w'))
     except Exception:
         pass
-    # Send webhook summarized
-    asyncio.create_task(send_n8n_webhook({
-        'summary': {
-            'count': len(payload_results),
-            'latency_ms': elapsed
-        },
-        'results': payload_results
-    }))
-    return {'count': len(payload_results), 'results': payload_results, 'params': {'conf': conf, 'iou': iou, 'imgsz': imgsz, 'device': device}, 'latency_ms': elapsed}
+    # Send webhook summarized (optional)
+    if send_webhook:
+        webhook_payload: Dict[str, Any] = {
+            'summary': {
+                'count': len(payload_results),
+                'latency_ms': elapsed
+            },
+            'results': payload_results
+        }
+        if extra_meta:
+            webhook_payload['meta'] = extra_meta
+        asyncio.create_task(send_n8n_webhook(webhook_payload))
+    return {
+        'count': len(payload_results),
+        'results': payload_results,
+        'params': {'conf': conf, 'iou': iou, 'imgsz': imgsz, 'device': device},
+        'latency_ms': elapsed,
+        **({'meta': extra_meta} if extra_meta else {})
+    }
 
 # ---------- Training Management ----------
 _jobs: Dict[str, Dict[str, Any]] = {}
@@ -344,7 +354,7 @@ async def start_training(job_id: str, data_yaml_path: str, params: Dict[str, Any
                         pass
             except Exception as e:
                 print(f"Erro ao coletar métricas: {e}")
-        
+
         # Registrar callback
         model.add_callback('on_train_epoch_end', on_train_epoch_end)
         
@@ -352,12 +362,19 @@ async def start_training(job_id: str, data_yaml_path: str, params: Dict[str, Any
         await asyncio.to_thread(model.train, **train_args)
         
         # Caminhos de saída
-        best_pt = os.path.join(settings.RUNS_DIR, 'detect', run_name, 'weights', 'best.pt')
+        # Compatibilidade com layouts diferentes do Ultralytics (com ou sem subpasta 'detect')
+        candidate1 = os.path.join(settings.RUNS_DIR, 'detect', run_name, 'weights', 'best.pt')
+        candidate2 = os.path.join(settings.RUNS_DIR, run_name, 'weights', 'best.pt')
+        best_pt_src = candidate1 if os.path.exists(candidate1) else (candidate2 if os.path.exists(candidate2) else None)
+        
         # Salvar em histórico
         hist_dir = os.path.join(settings.MODELS_DIR, 'history', run_name)
         os.makedirs(hist_dir, exist_ok=True)
-        if os.path.exists(best_pt):
-            shutil.copy2(best_pt, os.path.join(hist_dir, 'best.pt'))
+        if best_pt_src and os.path.exists(best_pt_src):
+            shutil.copy2(best_pt_src, os.path.join(hist_dir, 'best.pt'))
+            _jobs[job_id]['best_pt'] = os.path.join(hist_dir, 'best.pt')
+        else:
+            _jobs[job_id]['best_pt'] = None
         
         # Decidir status final
         final_status = _jobs.get(job_id, {}).get('status', 'running')
@@ -365,21 +382,18 @@ async def start_training(job_id: str, data_yaml_path: str, params: Dict[str, Any
             _jobs[job_id].update({
                 'status': 'completed',
                 'finished_at': time.strftime('%Y-%m-%d %H:%M:%S'),
-                'best_pt': os.path.join(hist_dir, 'best.pt') if os.path.exists(os.path.join(hist_dir, 'best.pt')) else None,
                 'metrics': metrics_history
             })
         elif final_status == 'stopped':
             _jobs[job_id].update({
                 'status': 'stopped',
                 'finished_at': time.strftime('%Y-%m-%d %H:%M:%S'),
-                'best_pt': os.path.join(hist_dir, 'best.pt') if os.path.exists(os.path.join(hist_dir, 'best.pt')) else None,
                 'metrics': metrics_history
             })
         else:
             # paused: manter sem finished_at
             _jobs[job_id].update({
                 'status': 'paused',
-                'best_pt': os.path.join(hist_dir, 'best.pt') if os.path.exists(os.path.join(hist_dir, 'best.pt')) else None,
                 'metrics': metrics_history
             })
         _persist_jobs()
@@ -395,12 +409,24 @@ async def validate_model(data_yaml_path: str, device: Optional[str] = None) -> D
     return dict(metrics) if hasattr(metrics, 'items') else {}
 
 async def promote_model(job_id: Optional[str], best_pt_path: Optional[str]) -> str:
-    if not best_pt_path and job_id:
-        best_pt_path = os.path.join(settings.MODELS_DIR, 'history', job_id, 'best.pt')
-    if not best_pt_path or not os.path.exists(best_pt_path):
+    # Tentar resolver caminho do best.pt
+    resolved_best = best_pt_path
+    if not resolved_best and job_id:
+        # Primeiro tenta o histórico
+        candidate_hist = os.path.join(settings.MODELS_DIR, 'history', job_id, 'best.pt')
+        resolved_best = candidate_hist if os.path.exists(candidate_hist) else None
+        # Se não existir no histórico, tenta diretamente em runs/<job_id>/weights/best.pt
+        if not resolved_best:
+            candidate_runs1 = os.path.join(settings.RUNS_DIR, 'detect', job_id, 'weights', 'best.pt')
+            candidate_runs2 = os.path.join(settings.RUNS_DIR, job_id, 'weights', 'best.pt')
+            if os.path.exists(candidate_runs1):
+                resolved_best = candidate_runs1
+            elif os.path.exists(candidate_runs2):
+                resolved_best = candidate_runs2
+    if not resolved_best or not os.path.exists(resolved_best):
         raise FileNotFoundError("best.pt não encontrado para promoção")
     os.makedirs(os.path.dirname(settings.ACTIVE_MODEL_PATH), exist_ok=True)
-    shutil.copy2(best_pt_path, settings.ACTIVE_MODEL_PATH)
+    shutil.copy2(resolved_best, settings.ACTIVE_MODEL_PATH)
     return settings.ACTIVE_MODEL_PATH
 
 async def export_model(fmt: str, half: bool, dynamic: bool, device: Optional[str]) -> str:
