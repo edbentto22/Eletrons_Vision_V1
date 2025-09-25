@@ -8,7 +8,7 @@ from typing import List, Optional, Union
 from fastapi import FastAPI, UploadFile, File, Body, Query, Request, Depends, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 
 import httpx
@@ -541,3 +541,10 @@ async def clear_jobs_endpoint():
     """Limpa o histórico de jobs e persiste em runs/jobs.json"""
     clear_jobs()
     return {"message": "Histórico de jobs limpo com sucesso"}
+
+@app.get("/i/{image_id}.jpg", include_in_schema=False)
+async def short_image(image_id: str):
+    path = os.path.join(settings.STATIC_DIR, "detections", f"{image_id}.jpg")
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="Imagem não encontrada")
+    return FileResponse(path, media_type="image/jpeg")

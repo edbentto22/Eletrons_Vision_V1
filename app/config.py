@@ -17,6 +17,9 @@ class Settings:
     WEB_DIR: str = os.path.join(BASE_DIR, "web")
     STATIC_DIR: str = os.path.join(WEB_DIR, "static")
 
+    # Public base URL used to build absolute URLs in webhooks/responses (e.g., https://vision.example.com)
+    PUBLIC_BASE_URL: Optional[str] = os.getenv("PUBLIC_BASE_URL")
+
     ACTIVE_MODEL_PATH: str = os.getenv("ACTIVE_MODEL", os.path.join(MODELS_DIR, "production.pt"))
     MODEL_VARIANT: str = os.getenv("MODEL_VARIANT", "yolov8n.pt")
 
@@ -34,6 +37,8 @@ class Settings:
         os.makedirs(os.path.join(self.DATA_DIR, "zips"), exist_ok=True)
         os.makedirs(os.path.join(self.DATA_DIR, "extracted"), exist_ok=True)
         os.makedirs(os.path.join(self.STATIC_DIR, "detections"), exist_ok=True)
+        # Optional: a dedicated static folder for uploads mapping
+        os.makedirs(os.path.join(self.STATIC_DIR, "uploads"), exist_ok=True)
 
 settings = Settings()
 settings.ensure_dirs()

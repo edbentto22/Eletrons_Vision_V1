@@ -23,67 +23,76 @@ def _load_yolo_model(device: Optional[str] = None) -> Any:
         model.to(device)
     return model
 
+def _abs_url(path: Optional[str]) -> Optional[str]:
+    """Build absolute URL from a relative path using PUBLIC_BASE_URL if available."""
+    if not path:
+        return None
+    base = settings.PUBLIC_BASE_URL
+    if not base:
+        return path
+    return f"{base.rstrip('/')}/{path.lstrip('/')}"
+
 async def send_n8n_webhook(payload: Dict[str, Any]) -> None:
-    cfg = load_config()
-    
-    # Verificar se webhook está habilitado
-    if not cfg.get("N8N_WEBHOOK_ENABLED", True):
-        return
-    
-    # Obter URL do webhook
-    url = cfg.get("N8N_WEBHOOK_URL") or settings.N8N_WEBHOOK_URL
-    if not url:
-        return
-    
-    # Verificar se deve incluir imagem em base64
-    if cfg.get("N8N_WEBHOOK_INCLUDE_IMAGE", False) and "results" in payload:
-        for result in payload["results"]:
-            if result.get("annotated_url"):
-                try:
-                    # Carregar imagem anotada e converter para base64
-                    img_path = os.path.join(settings.STATIC_DIR, "detections", os.path.basename(result["annotated_url"]))
-                    if os.path.exists(img_path):
-                        import base64
-                        with open(img_path, "rb") as img_file:
-                            img_data = base64.b64encode(img_file.read()).decode('utf-8')
-                            result["annotated_base64"] = f"data:image/jpeg;base64,{img_data}"
-                except Exception:
-                    pass
-    
-    # Enviar webhook
-    try:
-        from .state import log_webhook
-        async with httpx.AsyncClient(timeout=10) as client:
-            response = await client.post(url, json=payload)
-            # Registrar log do webhook
-            log_webhook("out", url, response.status_code, payload)
-    except Exception as e:
-        # Registrar falha
-        from .state import log_webhook
-        log_webhook("out", url, 0, {"error": str(e)})
+     cfg = load_config()
+     
+     # Verificar se webhook está habilitado
+     if not cfg.get("N8N_WEBHOOK_ENABLED", True):
+         return
+     
+     # Obter URL do webhook
+     url = cfg.get("N8N_WEBHOOK_URL") or settings.N8N_WEBHOOK_URL
+     if not url:
+         return
+     
+     # Verificar se deve incluir imagem em base64
+     if cfg.get("N8N_WEBHOOK_INCLUDE_IMAGE", False) and "results" in payload:
+         for result in payload["results"]:
+             if result.get("annotated_url"):
+                 try:
+                     # Carregar imagem anotada e converter para base64
+                     img_path = os.path.join(settings.STATIC_DIR, "detections", os.path.basename(result["annotated_url"]))
+                     if os.path.exists(img_path):
+                         import base64
+                         with open(img_path, "rb") as img_file:
+                             img_data = base64.b64encode(img_file.read()).decode('utf-8')
+                             result["annotated_base64"] = f"data:image/jpeg;base64,{img_data}"
+                 except Exception:
+                     pass
+     
+     # Enviar webhook
+     try:
+         from .state import log_webhook
+         async with httpx.AsyncClient(timeout=10) as client:
+             response = await client.post(url, json=payload)
+             # Registrar log do webhook
+             log_webhook("out", url, response.status_code, payload)
+     except Exception as e:
+         # Registrar falha
+         from .state import log_webhook
+         log_webhook("out", url, 0, {"error": str(e)})
 
 def _result_to_boxes(result: Any) -> Tuple[List[Dict[str, Any]], int, int]:
-    boxes_out: List[Dict[str, Any]] = []
-    # Ultralytics Results: result.boxes.xyxy, result.boxes.conf, result.boxes.cls
-    try:
-        xyxy = result.boxes.xyxy.cpu().numpy()
-        conf = result.boxes.conf.cpu().numpy()
-        cls = result.boxes.cls.cpu().numpy().astype(int)
-        labels = result.names if hasattr(result, 'names') else None
-        for i in range(len(xyxy)):
-            x1, y1, x2, y2 = xyxy[i].tolist()
-            boxes_out.append({
-                'x1': float(x1), 'y1': float(y1), 'x2': float(x2), 'y2': float(y2),
-                'conf': float(conf[i]), 'cls': int(cls[i]), 'label': labels.get(int(cls[i])) if isinstance(labels, dict) else None
-            })
-    except Exception:
-        pass
-    # Get image size
-    try:
-        h, w = result.orig_shape[0], result.orig_shape[1]
-    except Exception:
-        h, w = 0, 0
-    return boxes_out, w, h
+     boxes_out: List[Dict[str, Any]] = []
+     # Ultralytics Results: result.boxes.xyxy, result.boxes.conf, result.boxes.cls
+     try:
+         xyxy = result.boxes.xyxy.cpu().numpy()
+         conf = result.boxes.conf.cpu().numpy()
+         cls = result.boxes.cls.cpu().numpy().astype(int)
+         labels = result.names if hasattr(result, 'names') else None
+         for i in range(len(xyxy)):
+             x1, y1, x2, y2 = xyxy[i].tolist()
+             boxes_out.append({
+                 'x1': float(x1), 'y1': float(y1), 'x2': float(x2), 'y2': float(y2),
+                 'conf': float(conf[i]), 'cls': int(cls[i]), 'label': labels.get(int(cls[i])) if isinstance(labels, dict) else None
+             })
+     except Exception:
+         pass
+     # Get image size
+     try:
+         h, w = result.orig_shape[0], result.orig_shape[1]
+     except Exception:
+         h, w = 0, 0
+     return boxes_out, w, h
 
 def _annotate_and_save(result: Any, image_id: str) -> Optional[str]:
     if not settings.SAVE_ANNOTATIONS:
@@ -108,14 +117,32 @@ async def infer(paths: List[str], conf: float, iou: float, imgsz: int, device: O
         image_id = uuid.uuid4().hex
         boxes, w, h = _result_to_boxes(res)
         annotated_url = _annotate_and_save(res, image_id)
+        # Copiar a imagem de origem para static/uploads para servir publicamente
+        try:
+            ext = os.path.splitext(path)[1].lower() or ".jpg"
+            up_dir = os.path.join(settings.STATIC_DIR, "uploads")
+            os.makedirs(up_dir, exist_ok=True)
+            dest_name = f"{image_id}{ext}"
+            dest_path = os.path.join(up_dir, dest_name)
+            shutil.copyfile(path, dest_path)
+            source_url_rel = f"/static/uploads/{dest_name}"
+        except Exception:
+            source_url_rel = None
+
+        # Montar URL curta absoluta para imagem anotada
+        short_annot_rel = f"/i/{image_id}.jpg" if annotated_url else None
+        annotated_url_abs = _abs_url(short_annot_rel) if short_annot_rel else None
+        source_url_abs = _abs_url(source_url_rel) if source_url_rel else None
         payload_results.append({
             'image_id': image_id,
             'source': path,
+            'source_url': source_url_abs or source_url_rel,
             'width': w,
             'height': h,
             'detections': boxes,
-            'annotated_url': annotated_url
+            'annotated_url': annotated_url_abs or short_annot_rel
         })
+
     # Persist lightweight log
     log_path = os.path.join(settings.DATA_DIR, 'infer', 'log.json')
     try:

@@ -13,10 +13,11 @@ class Box(BaseModel):
 class ImageResult(BaseModel):
     image_id: str
     source: str
+    source_url: Optional[str] = None  # URL absoluta para o arquivo de entrada servido pelo app
     width: int
     height: int
     detections: List[Box]
-    annotated_url: Optional[str] = None
+    annotated_url: Optional[str] = None  # será absoluto se PUBLIC_BASE_URL estiver definido
 
 class InferResponse(BaseModel):
     count: int
