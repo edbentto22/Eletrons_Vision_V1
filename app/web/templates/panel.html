@@ -775,7 +775,7 @@
       </nav>
       <div class="section">
         <p class="muted">Modelo ativo:</p>
-        <p>{{ active_model if active_model else 'Nenhum' }}</p>
+        <p id="activeModelPath">{{ active_model if active_model else 'Nenhum' }}</p>
       </div>
     </aside>
     <main class="content">
@@ -1603,6 +1603,7 @@
               <td>{{ job.finished_at if job.finished_at else '—' }}</td>
               <td>
                 <button class="btn secondary small" onclick="showMetrics('{{ job.job_id }}')">Métricas</button>
+                <button class="btn small" style="background:#2563eb;border-color:#2563eb;" onclick="promoteJob('{{ job.job_id }}', '{{ job.best_pt if job.best_pt else '' }}', this)">Ativar</button>
                 {% if job.status == 'running' %}
                 <button class="btn warn small" onclick="setCurrentJobAndPause('{{ job.job_id }}')">Pausar</button>
                 <button class="btn danger small" onclick="setCurrentJobAndStop('{{ job.job_id }}')">Parar</button>
@@ -3029,6 +3030,66 @@
       } catch (error) {
         console.error('Erro ao parar treinamento:', error);
         showNotification('Erro de conexão ao parar treinamento', 'error');
+      }
+    }
+
+    // Promover/Ativar modelo treinado
+    async function promoteJob(jobId, bestPtPath, btnEl) {
+      if (!jobId) {
+        showNotification('Job inválido para ativação', 'error');
+        return;
+      }
+
+      const proceed = confirm('Ativar o modelo deste job para inferência?');
+      if (!proceed) return;
+
+      try {
+        const auth = getAuthHeader();
+        if (btnEl) {
+          btnEl.disabled = true;
+          const originalText = btnEl.textContent;
+          btnEl.dataset.originalText = originalText;
+          btnEl.textContent = 'Ativando...';
+        }
+
+        const payload = { job_id: jobId };
+        if (bestPtPath && bestPtPath.trim() !== '' && bestPtPath !== '—') {
+          payload.best_pt_path = bestPtPath;
+        }
+
+        const resp = await fetch('/models/promote', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(auth ? { 'Authorization': auth } : {})
+          },
+          body: JSON.stringify(payload)
+        });
+
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({}));
+          throw new Error(err.detail || 'Falha ao ativar modelo');
+        }
+
+        const data = await resp.json();
+        const activePath = data.active_model || '(desconhecido)';
+        showNotification('Modelo ativado com sucesso: ' + activePath, 'success');
+
+        const activeModelEl = document.getElementById('activeModelPath');
+        if (activeModelEl) activeModelEl.textContent = activePath;
+
+        if (btnEl) {
+          btnEl.textContent = 'Ativado ✓';
+          btnEl.style.background = '#10b981';
+          btnEl.style.borderColor = '#10b981';
+        }
+      } catch (e) {
+        console.error('Erro ao ativar modelo', e);
+        showNotification(e.message || 'Erro ao ativar modelo', 'error');
+        if (btnEl) {
+          btnEl.disabled = false;
+          btnEl.textContent = btnEl.dataset.originalText || 'Ativar';
+        }
       }
     }
 
