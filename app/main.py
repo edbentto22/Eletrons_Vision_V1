@@ -601,6 +601,13 @@ async def login_page(request: Request):
     await issue_csrf(response)
     return response
 
+@app.get("/", include_in_schema=False)
+async def root(request: Request):
+    """Redireciona a raiz para /login (anônimo) ou /panel (logado)."""
+    if not request.session.get("user"):
+        return RedirectResponse(url="/login", status_code=303)
+    return RedirectResponse(url="/panel", status_code=303)
+
 @app.post("/login", include_in_schema=False)
 async def login_submit(request: Request, email: str = Form(...), password: str = Form(...), csrf_token: str = Form(None)):
     await verify_csrf(request, csrf_token)
