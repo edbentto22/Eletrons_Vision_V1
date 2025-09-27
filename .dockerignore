@@ -1,0 +1,30 @@
+# Reduce Docker build context for faster Coolify builds
+.git/
+.DS_Store
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.swp
+*.swo
+*.log
+
+# Local virtualenvs
+venv/
+.venv/
+
+# Large runtime dirs (mounted as volumes in Compose)
+app/data/
+app/models/
+app/runs/
+
+# Not needed in image
+YOLOv8/
+dev_run.sh
+README.md
+LICENSE
+
+# Tests and artifacts
+tests/
+dist/
+build/
