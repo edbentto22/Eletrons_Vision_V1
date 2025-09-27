@@ -26,6 +26,15 @@ class Settings:
     SAVE_ANNOTATIONS: bool = os.getenv("SAVE_ANNOTATIONS", "true").lower() == "true"
     MAX_WEBHOOK_PAYLOAD_MB: int = int(os.getenv("MAX_WEBHOOK_PAYLOAD_MB", "16"))
 
+    # Authentication (UI login)
+    ADMIN_EMAIL: str = os.getenv("ADMIN_EMAIL", "admin@example.com")
+    ADMIN_PASSWORD_HASH: Optional[str] = os.getenv("ADMIN_PASSWORD_HASH")
+    ADMIN_PASSWORD: Optional[str] = os.getenv("ADMIN_PASSWORD")  # only for development; prefer ADMIN_PASSWORD_HASH in production
+    SESSION_SECRET: str = os.getenv("SESSION_SECRET", "change-me-please")
+
+    # Environment
+    APP_ENV: str = os.getenv("APP_ENV", "development")
+
     def ensure_dirs(self) -> None:
         os.makedirs(self.MODELS_DIR, exist_ok=True)
         os.makedirs(os.path.join(self.MODELS_DIR, "history"), exist_ok=True)
