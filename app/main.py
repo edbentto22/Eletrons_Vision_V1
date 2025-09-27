@@ -612,6 +612,7 @@ async def root(request: Request):
 async def login_submit(request: Request, email: str = Form(...), password: str = Form(...), csrf_token: str = Form(None)):
     await verify_csrf(request, csrf_token)
     from passlib.hash import bcrypt
+    import logging
     # Rate limiting por IP+email
     ip = request.client.host if request.client else 'unknown'
     key = f"{ip}:{(email or '').lower()}"
@@ -625,8 +626,17 @@ async def login_submit(request: Request, email: str = Form(...), password: str =
 
     valid_email = settings.ADMIN_EMAIL
     # Prefer hash; fallback to plain password for development
+    is_ok = False
     if settings.ADMIN_PASSWORD_HASH:
-        is_ok = (email.lower() == valid_email.lower()) and bcrypt.verify(password, settings.ADMIN_PASSWORD_HASH)
+        # Normaliza possíveis aspas/cortes vindos do ambiente (Coolify/Docker) para evitar erro de formato do hash
+        stored_hash = settings.ADMIN_PASSWORD_HASH.strip().strip('"').strip("'")
+        try:
+            is_ok = (email.lower() == valid_email.lower()) and bcrypt.verify(password, stored_hash)
+        except Exception as e:
+            # Evita 500 por hash inválido/malformatado e registra detalhes para diagnóstico
+            logging.getLogger("uvicorn.error").exception("Erro ao verificar ADMIN_PASSWORD_HASH: %s", e)
+            # Tratar como falha de credenciais sem revelar detalhe sensível
+            is_ok = False
     else:
         is_ok = (email.lower() == valid_email.lower()) and (settings.ADMIN_PASSWORD is not None) and (password == settings.ADMIN_PASSWORD)
 
