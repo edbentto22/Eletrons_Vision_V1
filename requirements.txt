@@ -9,3 +9,5 @@ opencv-python==4.10.0.84
 ultralytics==8.3.10
 torch==2.8.0
 jinja2==3.1.4
+passlib[bcrypt]
+itsdangerous>=2.1.2
