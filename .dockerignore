@@ -27,4 +27,8 @@ LICENSE
 # Tests and artifacts
 tests/
 dist/
+<<<<<<< HEAD
 build/
+=======
+build/
+>>>>>>> 2019b65 (chore(lfs): stop tracking production.pt; use model via volume on Coolify)
