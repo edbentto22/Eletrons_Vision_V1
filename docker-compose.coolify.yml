@@ -9,8 +9,14 @@ services:
     restart: unless-stopped
     environment:
       APP_NAME: ${APP_NAME:-Eletrons Vision Service}
+      APP_ENV: ${APP_ENV:-production}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
       AUTH_TOKEN: ${AUTH_TOKEN}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH}
+      SESSION_SECRET: ${SESSION_SECRET}
       N8N_WEBHOOK_URL: ${N8N_WEBHOOK_URL}
+      MAX_WEBHOOK_PAYLOAD_MB: ${MAX_WEBHOOK_PAYLOAD_MB:-16}
       CORS_ORIGINS: ${CORS_ORIGINS}
       IP_WHITELIST: ${IP_WHITELIST}
       MODELS_DIR: /app/models
