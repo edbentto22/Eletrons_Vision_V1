@@ -275,8 +275,10 @@ async def panel_upload(
     batch: int = Form(16),
     csrf_token: str = Form(None)
 ):
-    # Verifica CSRF explícito (double-submit)
-    await verify_csrf(request, csrf_token)
+    # Verifica CSRF apenas quando a autenticação é via sessão (sem Bearer)
+    auth_hdr = request.headers.get("Authorization", "")
+    if not auth_hdr.startswith("Bearer "):
+        await verify_csrf(request, csrf_token)
 
     # Criar job_id e diretório de extração antecipadamente
     job_id = uuid.uuid4().hex
@@ -879,3 +881,16 @@ async def create_training_endpoint(payload: TrainCreateRequest = Body(...)):
         "data_yaml_path": data_yaml_path,
         "train_params": params,
     })
+
+@app.post("/models/promote", dependencies=[Depends(require_auth), Depends(require_csrf_if_session)])
+async def promote_model_endpoint(req: PromoteRequest = Body(...)):
+    """Ativa (promove) um modelo treinado copiando o best.pt para o caminho de modelo ativo.
+    Requer sessão/autorização e valida CSRF quando aplicável.
+    """
+    try:
+        active_path = await promote_model(req.job_id, req.best_pt_path)
+        return {"active_model": active_path}
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Falha ao promover modelo: {str(e)}")

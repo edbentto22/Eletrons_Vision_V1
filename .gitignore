@@ -79,18 +79,8 @@ app/models/**/*.tensorrt
 YOLOv8/**/weights/
 YOLOv8/**/labels*.jpg
 
-# Docker and compose overrides
-*.local.yml
-
-# FastAPI/Uvicorn artefacts
-*.pid
-
-# Secrets
-secrets*/
-*.key
-*.pem
-*.crt
-
-# Node/web build (if any)
+# Web UI generated images (not versioned)
+app/web/static/uploads/
+app/web/static/detections/
 app/web/static/build/
 app/web/static/dist/

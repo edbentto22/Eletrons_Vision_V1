@@ -3138,7 +3138,8 @@
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            ...(auth ? { 'Authorization': auth } : {})
+            ...(auth ? { 'Authorization': auth } : {}),
+            'x-csrf-token': getCsrfToken()
           },
           body: JSON.stringify(payload)
         });
