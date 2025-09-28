@@ -19,6 +19,7 @@ from .schemas import InferResponse, TrainParams, TrainStatus, ValidateRequest, E
 from .yolo_service import infer as yolo_infer, start_training, validate_model, promote_model, export_model, _jobs, register_job_task, cancel_job_task, clear_jobs, _extract_zip, _jobs_lock, _persist_jobs
 from .yolo_service import send_n8n_webhook
 from .state import load_config, save_config
+from .schemas import TrainCreateRequest, TrainCreateResponse
 
 app = FastAPI(title=settings.APP_NAME)
 
@@ -61,7 +62,12 @@ async def issue_csrf(response):
     return token
 
 async def verify_csrf(request: Request, token_from_form: Optional[str] = None):
-    """Verifica token CSRF via double-submit (cookie + form/header)."""
+    """Verifica token CSRF via double-submit (cookie + form/header).
+    Em ambiente de desenvolvimento, o CSRF é desabilitado para facilitar testes locais.
+    """
+    # Bypass CSRF in development for local testing convenience
+    if settings.APP_ENV.lower() == "development":
+        return
     cookie_token = request.cookies.get(CSRF_COOKIE_NAME)
     header_token = request.headers.get(CSRF_HEADER_NAME)
     candidate = token_from_form or header_token
@@ -736,3 +742,97 @@ _LOGIN_MAX_FAILS = int(os.getenv("LOGIN_MAX_FAILS", "5"))
 _LOGIN_LOCK_SEC = int(os.getenv("LOGIN_LOCK_SEC", "900"))     # 15 min
 # Mapa: key = "<ip>:<email>", value = {"fails": [timestamps], "locked_until": epoch_seconds}
 _login_attempts: dict = {}
+
+
+@app.post("/train", response_model=TrainCreateResponse, dependencies=[Depends(require_auth)])
+async def create_training_endpoint(payload: TrainCreateRequest = Body(...)):
+    """Cria um job de treinamento via JSON.
+    Requer Authorization: Bearer <AUTH_TOKEN> quando configurado; caso contrário aceita sessão.
+    - Se `data_yaml_path` for fornecido, usa diretamente.
+    - Se `zip_url` for fornecido, baixa o ZIP para data/zips e extrai para data/extracted/<job_id>.
+    Retorna 201 com {job_id, status, data_yaml_path, train_params}.
+    """
+    # Validar fonte
+    data_yaml_path: Optional[str] = payload.data_yaml_path
+    zip_url: Optional[str] = payload.zip_url
+    if not data_yaml_path and not zip_url:
+        raise HTTPException(status_code=422, detail="Forneça data_yaml_path ou zip_url")
+    if data_yaml_path and zip_url:
+        raise HTTPException(status_code=422, detail="Use apenas um: data_yaml_path OU zip_url")
+
+    # Criar job_id e diretórios
+    job_id = uuid.uuid4().hex
+    extract_dir = os.path.join(settings.DATA_DIR, "extracted", job_id)
+    os.makedirs(extract_dir, exist_ok=True)
+
+    # Se vier zip_url, baixar e extrair
+    if zip_url:
+        # Baixar em chunks para evitar OOM e respeitar limite
+        zips_dir = os.path.join(settings.DATA_DIR, "zips")
+        os.makedirs(zips_dir, exist_ok=True)
+        safe_name = f"{job_id}.zip"
+        zip_path = os.path.join(zips_dir, safe_name)
+        max_mb = int(os.getenv("MAX_DATASET_ZIP_MB", "1024"))
+        try:
+            async with httpx.AsyncClient(timeout=300) as client:
+                async with client.stream("GET", zip_url) as resp:
+                    if resp.status_code != 200:
+                        raise HTTPException(status_code=400, detail=f"Falha ao baixar ZIP: HTTP {resp.status_code}")
+                    content_type = (resp.headers.get("content-type") or "").lower()
+                    # Não exigir content-type estrito; apenas avisar
+                    size = 0
+                    with open(zip_path, "wb") as out:
+                        async for chunk in resp.aiter_bytes():
+                            if not chunk:
+                                break
+                            size += len(chunk)
+                            if size > max_mb * 1024 * 1024:
+                                out.close()
+                                try:
+                                    os.remove(zip_path)
+                                except Exception:
+                                    pass
+                                raise HTTPException(status_code=413, detail=f"Tamanho do ZIP excede {max_mb}MB")
+                            out.write(chunk)
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Erro ao baixar ZIP: {str(e)}")
+
+        # Checar conteúdo e extrair
+        import zipfile
+        try:
+            with zipfile.ZipFile(zip_path, 'r') as zf:
+                for n in zf.namelist():
+                    norm = n.replace("\\", "/")
+                    if os.path.isabs(n) or ".." in norm.split("/"):
+                        raise HTTPException(status_code=400, detail="ZIP inválido (path traversal detectado)")
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(status_code=400, detail="ZIP corrompido ou inválido")
+        data_yaml_path = _extract_zip(zip_path, extract_dir)
+
+    # Iniciar treinamento
+    params = {
+        "epochs": payload.epochs,
+        "imgsz": payload.imgsz,
+        "lr0": payload.lr0,
+        "batch": payload.batch,
+        "device": payload.device,
+        "pretrained": payload.pretrained,
+        "resume": payload.resume,
+        "model_variant": payload.model_variant,
+    }
+    if not data_yaml_path:
+        raise HTTPException(status_code=400, detail="data_yaml_path não definido após processamento")
+
+    task = asyncio.create_task(start_training(job_id, data_yaml_path, params))
+    register_job_task(job_id, task)
+
+    return JSONResponse(status_code=201, content={
+        "job_id": job_id,
+        "status": "running",
+        "data_yaml_path": data_yaml_path,
+        "train_params": params,
+    })

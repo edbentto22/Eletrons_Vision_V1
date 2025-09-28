@@ -115,3 +115,29 @@ class WebhookLogEntry(BaseModel):
 class WebhookLogResponse(BaseModel):
     entries: List[WebhookLogEntry]
     count: int
+
+# ===== New schema for JSON training creation =====
+class TrainCreateRequest(BaseModel):
+    """Cria um job de treinamento via JSON.
+    Uma das opções deve ser fornecida:
+    - data_yaml_path: caminho absoluto para um data.yaml já disponível no servidor
+    - zip_url: URL pública de um arquivo .zip contendo dataset; será baixado e extraído
+    """
+    # Fonte de dados
+    data_yaml_path: Optional[str] = None
+    zip_url: Optional[str] = Field(default=None)
+    # Parâmetros de treino (mesmos de TrainParams)
+    epochs: int = 50
+    imgsz: int = 640
+    lr0: float = 0.01
+    batch: int = 16
+    device: Optional[str] = None
+    pretrained: bool = True
+    resume: bool = False
+    model_variant: Optional[str] = None
+
+class TrainCreateResponse(BaseModel):
+    job_id: str
+    status: str
+    data_yaml_path: str
+    train_params: Dict[str, Any]

@@ -2,6 +2,8 @@
 set -euo pipefail
 
 # Simple dev runner
+# Ensure hashed password is ignored in dev so we can use ADMIN_PASSWORD fallback
+unset ADMIN_PASSWORD_HASH
 export APP_NAME="Eletrons Vision Service"
 export MODEL_VARIANT="yolov8n.pt"
 export SAVE_ANNOTATIONS="true"
@@ -15,4 +17,5 @@ export ADMIN_EMAIL="${ADMIN_EMAIL:-admin@example.com}"
 export ADMIN_PASSWORD="${ADMIN_PASSWORD:-admin}"
 export SESSION_SECRET="${SESSION_SECRET:-devsecret}"
 
-python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+# Bind to localhost and use a dedicated dev port to avoid conflicts
+python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8012
