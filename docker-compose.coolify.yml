@@ -5,10 +5,15 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        # Prevent Coolify injecting runtime secrets as build args.
+        # Keep build-time minimal and generic.
+        APP_ENV: development
     image: eletrons-vision:latest
     restart: unless-stopped
     environment:
       APP_NAME: ${APP_NAME:-Eletrons Vision Service}
+      # Runtime-only vars; set them in Coolify UI as Runtime, not Build Args
       APP_ENV: ${APP_ENV:-production}
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
       AUTH_TOKEN: ${AUTH_TOKEN}
