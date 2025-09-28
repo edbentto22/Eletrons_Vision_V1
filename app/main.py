@@ -278,59 +278,102 @@ async def panel_upload(
     # Verifica CSRF explícito (double-submit)
     await verify_csrf(request, csrf_token)
 
+    # Criar job_id e diretório de extração antecipadamente
+    job_id = uuid.uuid4().hex
+    extract_dir = os.path.join(settings.DATA_DIR, "extracted", job_id)
+    os.makedirs(extract_dir, exist_ok=True)
+
     # Validar tipo de arquivo e extensão
     content_type = (dataset.content_type or "").lower()
-    allowed_types = {"application/zip", "application/x-zip-compressed", "multipart/x-zip", "application/x-zip"}
     filename = dataset.filename or "dataset.zip"
-    if not filename.lower().endswith(".zip") or (content_type and content_type not in allowed_types):
-        raise HTTPException(status_code=400, detail="Envie um arquivo .zip válido")
 
     # Sanitizar nome de arquivo
     import re
     base = os.path.basename(filename)
     safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", base)
 
+    is_zip = safe_name.lower().endswith(".zip")
+    is_yaml = safe_name.lower().endswith(".yaml") or safe_name.lower().endswith(".yml")
+
+    allowed_zip_types = {"application/zip", "application/x-zip-compressed", "multipart/x-zip", "application/x-zip"}
+    allowed_yaml_types = {"text/yaml", "application/x-yaml", "application/yaml", "text/x-yaml"}
+
+    if not (is_zip or is_yaml):
+        raise HTTPException(status_code=400, detail="Envie um arquivo .zip ou .yaml válido")
+    if content_type and not (content_type in allowed_zip_types or content_type in allowed_yaml_types or content_type == "application/octet-stream"):
+        # Permite application/octet-stream porque alguns navegadores não definem corretamente para .yaml
+        raise HTTPException(status_code=400, detail="Tipo de conteúdo inválido para upload (esperado .zip ou .yaml)")
+
     # Limitar tamanho lendo em chunks
     max_mb = int(os.getenv("MAX_DATASET_ZIP_MB", "1024"))  # default 1GB
-    zips_dir = os.path.join(settings.DATA_DIR, "zips")
-    os.makedirs(zips_dir, exist_ok=True)
-    zip_path = os.path.join(zips_dir, f"{uuid.uuid4().hex}-{safe_name}")
 
-    size = 0
-    with open(zip_path, "wb") as out:
-        while True:
-            chunk = await dataset.read(1024 * 1024)  # 1MB
-            if not chunk:
-                break
-            size += len(chunk)
-            if size > max_mb * 1024 * 1024:
-                out.close()
-                try:
-                    os.remove(zip_path)
-                except Exception:
-                    pass
-                raise HTTPException(status_code=413, detail=f"Tamanho do ZIP excede {max_mb}MB")
-            out.write(chunk)
+    if is_zip:
+        zips_dir = os.path.join(settings.DATA_DIR, "zips")
+        os.makedirs(zips_dir, exist_ok=True)
+        zip_path = os.path.join(zips_dir, f"{uuid.uuid4().hex}-{safe_name}")
 
-    # Checagem básica contra path traversal no ZIP
-    import zipfile
-    try:
-        with zipfile.ZipFile(zip_path, 'r') as zf:
-            for n in zf.namelist():
-                norm = n.replace("\\", "/")
-                if os.path.isabs(n) or ".." in norm.split("/"):
-                    raise HTTPException(status_code=400, detail="ZIP inválido (path traversal detectado)")
-    except HTTPException:
-        raise
-    except Exception:
-        raise HTTPException(status_code=400, detail="ZIP corrompido ou inválido")
+        size = 0
+        with open(zip_path, "wb") as out:
+            while True:
+                chunk = await dataset.read(1024 * 1024)  # 1MB
+                if not chunk:
+                    break
+                size += len(chunk)
+                if size > max_mb * 1024 * 1024:
+                    out.close()
+                    try:
+                        os.remove(zip_path)
+                    except Exception:
+                        pass
+                    raise HTTPException(status_code=413, detail=f"Tamanho do ZIP excede {max_mb}MB")
+                out.write(chunk)
 
-    # Extrair e iniciar treinamento
-    job_id = uuid.uuid4().hex
-    extract_dir = os.path.join(settings.DATA_DIR, "extracted", job_id)
-    os.makedirs(extract_dir, exist_ok=True)
-    data_yaml_path = _extract_zip(zip_path, extract_dir)
+        # Checagem básica contra path traversal no ZIP
+        import zipfile
+        try:
+            with zipfile.ZipFile(zip_path, 'r') as zf:
+                for n in zf.namelist():
+                    norm = n.replace("\\", "/")
+                    if os.path.isabs(n) or ".." in norm.split("/"):
+                        raise HTTPException(status_code=400, detail="ZIP inválido (path traversal detectado)")
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(status_code=400, detail="ZIP corrompido ou inválido")
 
+        # Extrair e obter data.yaml
+        try:
+            data_yaml_path = _extract_zip(zip_path, extract_dir)
+        except Exception as e:
+            # Propaga erro do extrator como 400 para feedback ao usuário
+            raise HTTPException(status_code=400, detail=f"Falha ao extrair ZIP: {str(e)}")
+    else:
+        # Upload de YAML direto
+        data_yaml_path = os.path.join(extract_dir, "data.yaml")
+        size = 0
+        with open(data_yaml_path, "wb") as out:
+            while True:
+                chunk = await dataset.read(1024 * 1024)  # 1MB
+                if not chunk:
+                    break
+                size += len(chunk)
+                if size > max_mb * 1024 * 1024:
+                    out.close()
+                    try:
+                        os.remove(data_yaml_path)
+                    except Exception:
+                        pass
+                    raise HTTPException(status_code=413, detail=f"Tamanho do YAML excede {max_mb}MB")
+                out.write(chunk)
+        # Validação mínima: arquivo não vazio
+        if os.path.getsize(data_yaml_path) == 0:
+            try:
+                os.remove(data_yaml_path)
+            except Exception:
+                pass
+            raise HTTPException(status_code=400, detail="Arquivo YAML vazio")
+
+    # Iniciar treinamento
     params = {"epochs": epochs, "imgsz": imgsz, "batch": batch}
     task = asyncio.create_task(start_training(job_id, data_yaml_path, params))
     register_job_task(job_id, task)
