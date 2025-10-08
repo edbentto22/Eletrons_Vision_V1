@@ -10,10 +10,9 @@ services:
     devices:
       - /dev/dri:/dev/dri
     
-    # Grupos necessários
+    # Grupos necessários (apenas video - render não existe)
     group_add:
       - video
-      - render
     
     environment:
       - APP_NAME=Eletrons Vision Service
