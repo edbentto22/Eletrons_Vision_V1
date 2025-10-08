@@ -1,0 +1,89 @@
+version: "3.9"
+
+services:
+  detector:
+    build:
+      context: .
+      dockerfile: Dockerfile.azure-amd
+      args:
+        APP_ENV: production
+    image: eletrons-vision:azure-amd
+    restart: unless-stopped
+    
+    # Configurações específicas para Azure NV4as v4
+    deploy:
+      resources:
+        limits:
+          # Limitar uso de CPU para não sobrecarregar a instância
+          cpus: '3.5'
+          memory: 12G
+        reservations:
+          cpus: '2.0'
+          memory: 8G
+    
+    environment:
+      APP_NAME: ${APP_NAME:-Eletrons Vision Service - Azure AMD}
+      APP_ENV: ${APP_ENV:-production}
+      PORT: ${PORT:-8000}
+      
+      # Configurações específicas para Azure NV4as v4
+      AZURE_INSTANCE_TYPE: NV4as_v4
+      GPU_AVAILABLE: "false"
+      CPU_CORES: "4"
+      MEMORY_GB: "14"
+      
+      # Otimizações de performance para CPU AMD
+      OMP_NUM_THREADS: "4"
+      MKL_NUM_THREADS: "4"
+      OPENBLAS_NUM_THREADS: "4"
+      CUDA_VISIBLE_DEVICES: ""
+      
+      # Configurações YOLO otimizadas para CPU
+      YOLO_BATCH_SIZE: "1"
+      YOLO_WORKERS: "2"
+      YOLO_IMGSZ: "640"
+      YOLO_DEVICE: "cpu"
+      
+      # Configurações da aplicação
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
+      AUTH_TOKEN: ${AUTH_TOKEN}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH}
+      SESSION_SECRET: ${SESSION_SECRET}
+      N8N_WEBHOOK_URL: ${N8N_WEBHOOK_URL}
+      MAX_WEBHOOK_PAYLOAD_MB: ${MAX_WEBHOOK_PAYLOAD_MB:-8}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+      IP_WHITELIST: ${IP_WHITELIST}
+      
+      # Diretórios
+      MODELS_DIR: /app/models
+      DATA_DIR: /app/data
+      RUNS_DIR: /app/runs
+      ACTIVE_MODEL: /app/models/production.pt
+      MODEL_VARIANT: ${MODEL_VARIANT:-yolov8n.pt}
+      SAVE_ANNOTATIONS: ${SAVE_ANNOTATIONS:-true}
+    
+    volumes:
+      - eletrons-models:/app/models
+      - eletrons-data:/app/data
+      - eletrons-runs:/app/runs
+    
+    # Healthcheck otimizado para CPU
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:${PORT:-8000}/health', timeout=5).status==200 else 1)\""]
+      interval: 45s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    
+    # Labels para identificação
+    labels:
+      - "azure.instance.type=NV4as_v4"
+      - "azure.gpu.type=AMD_Radeon_Instinct_MI25"
+      - "azure.cpu.type=AMD_EPYC_7V12"
+      - "deployment.mode=cpu-only"
+
+volumes:
+  eletrons-models:
+  eletrons-data:
+  eletrons-runs:

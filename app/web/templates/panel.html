@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>{{ app_name }} — Painel</title>
   <link rel="stylesheet" href="/static/style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <style>
     /* Reset e base styles com inspiração Apple */
     * {
@@ -14,8 +17,8 @@
     }
 
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-      background: linear-gradient(135deg, #121212 0%, #1e1e1e 100%);
+      font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: #f8fafc;
       min-height: 100vh;
       color: #111827;
       line-height: 1.6;
@@ -102,7 +105,7 @@
 
     .sidebar .section {
       background: #ffffff;
-      border-radius: 16px;
+      border-radius: 20px;
       padding: 20px;
       border: 1px solid #e5e7eb;
     }
@@ -122,7 +125,7 @@
     /* Content area */
     .content { 
       padding: 40px;
-      background: rgba(255, 255, 255, 0.02);
+      background: #f8fafc;
     }
 
     /* Header */
@@ -149,15 +152,11 @@
     }
 
     .card { 
-      background: rgba(0, 0, 0, 0.7);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      border: 1px solid rgba(255, 255, 255, 0.1);
+      background: #ffffff;
+      border: 1px solid #e5e7eb;
       border-radius: 20px;
       padding: 32px;
-      box-shadow: 
-        0 8px 32px rgba(0, 0, 0, 0.3),
-        0 1px 0 rgba(255, 255, 255, 0.1) inset;
+      box-shadow: 0 8px 20px rgba(17,24,39,0.06);
       transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       position: relative;
       overflow: hidden;
@@ -221,16 +220,12 @@
 
     /* Sections */
     .section { 
-      background: rgba(255, 255, 255, 0.1);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      border: 1px solid rgba(255, 255, 255, 0.2);
+      background: #ffffff;
+      border: 1px solid #e5e7eb;
       border-radius: 20px;
       padding: 32px;
       margin-bottom: 32px;
-      box-shadow: 
-        0 8px 32px rgba(0, 0, 0, 0.1),
-        0 1px 0 rgba(255, 255, 255, 0.2) inset;
+      box-shadow: 0 8px 20px rgba(17,24,39,0.06);
       transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     }
 
@@ -2592,14 +2587,17 @@
         updateInferStatus('Enviando resultados ao n8n...');
         const t0 = performance.now();
         try {
+          // Estrutura simplificada e compatível com N8N
           const payload = {
-            summary: lastInferenceResult.params || {},
+            timestamp: new Date().toISOString(),
+            job: 'infer',
+            count: lastInferenceResult.results?.length || 0,
+            latency_ms: lastInferenceResult.latency_ms || 0,
             results: lastInferenceResult.results || [],
-            meta: {
-              registro: document.getElementById('registro')?.value || null,
-              ponto: document.getElementById('ponto')?.value || null,
-              sheet_id: document.getElementById('sheet_id')?.value || null
-            }
+            // Meta dados no root level
+            registro: document.getElementById('registro')?.value || null,
+            ponto: document.getElementById('ponto')?.value || null,
+            sheet_id: document.getElementById('sheet_id')?.value || null
           };
           const resp = await fetch('/webhook/send', {
             method: 'POST',

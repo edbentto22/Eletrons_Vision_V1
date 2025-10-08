@@ -1,0 +1,48 @@
+# Requirements otimizados para Azure Standard NV4as v4 (AMD)
+# CPU-only, otimizado para AMD EPYC 7V12
+
+# PyTorch CPU-only (mais leve e otimizado)
+--index-url https://download.pytorch.org/whl/cpu
+torch==2.3.1+cpu
+torchvision==0.18.1+cpu
+torchaudio==2.3.1+cpu
+
+# Ultralytics YOLO (versão estável)
+ultralytics==8.2.103
+
+# FastAPI e dependências web
+fastapi==0.115.4
+uvicorn[standard]==0.32.0
+python-multipart==0.0.12
+jinja2==3.1.4
+
+# Processamento de imagem otimizado
+opencv-python-headless==4.10.0.84
+pillow==10.4.0
+numpy==1.26.4
+
+# Utilitários
+python-dotenv==1.0.1
+pydantic==2.9.2
+pydantic-settings==2.6.0
+httpx==0.27.2
+aiofiles==24.1.0
+
+# Logging e monitoramento
+loguru==0.7.2
+
+# Segurança
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.2.0
+
+# Otimizações específicas para AMD
+# Intel MKL otimizado (funciona bem com AMD também)
+mkl==2024.1.0
+
+# OpenMP para paralelização
+# (instalado via sistema no Dockerfile)
+
+# Ferramentas de desenvolvimento (opcional)
+# pytest==8.3.3
+# pytest-asyncio==0.24.0

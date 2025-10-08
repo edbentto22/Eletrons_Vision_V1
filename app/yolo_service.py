@@ -156,15 +156,16 @@ async def infer(paths: List[str], conf: float, iou: float, imgsz: int, device: O
         pass
     # Send webhook summarized (optional)
     if send_webhook:
+        # Estrutura simplificada e compatível com N8N
         webhook_payload: Dict[str, Any] = {
-            'summary': {
-                'count': len(payload_results),
-                'latency_ms': elapsed
-            },
+            'timestamp': time.strftime('%Y-%m-%dT%H:%M:%SZ'),
+            'job': 'infer',
+            'count': len(payload_results),
+            'latency_ms': elapsed,
             'results': payload_results
         }
         if extra_meta:
-            webhook_payload['meta'] = extra_meta
+            webhook_payload.update(extra_meta)  # Adicionar meta diretamente no root
         asyncio.create_task(send_n8n_webhook(webhook_payload))
     return {
         'count': len(payload_results),
