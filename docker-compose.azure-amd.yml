@@ -24,7 +24,7 @@ services:
     environment:
       APP_NAME: ${APP_NAME:-Eletrons Vision Service - Azure AMD}
       APP_ENV: ${APP_ENV:-production}
-      PORT: ${PORT:-8000}
+      PORT: ${PORT:-8012}
       
       # Configurações específicas para Azure NV4as v4
       AZURE_INSTANCE_TYPE: NV4as_v4
@@ -70,7 +70,7 @@ services:
     
     # Healthcheck otimizado para CPU
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:${PORT:-8000}/health', timeout=5).status==200 else 1)\""]
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:${PORT:-8012}/health', timeout=5).status==200 else 1)\""]
       interval: 45s
       timeout: 10s
       retries: 3
