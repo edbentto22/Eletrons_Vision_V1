@@ -1,0 +1,57 @@
+version: "3.9"
+services:
+  detector:
+    build: .
+    image: eletrons-vision:latest
+    container_name: eletrons-vision
+    restart: unless-stopped
+    
+    # Dispositivos AMD GPU (substitui a seção deploy/nvidia)
+    devices:
+      - /dev/kfd:/dev/kfd
+      - /dev/dri:/dev/dri
+    
+    # Grupos necessários para acesso à GPU AMD
+    group_add:
+      - video
+      - render
+    
+    environment:
+      - APP_NAME=Eletrons Vision Service
+      - AUTH_TOKEN=${AUTH_TOKEN}
+      - N8N_WEBHOOK_URL=${N8N_WEBHOOK_URL}
+      - CORS_ORIGINS=${CORS_ORIGINS}
+      - IP_WHITELIST=${IP_WHITELIST}
+      - MODELS_DIR=/app/models
+      - DATA_DIR=/app/data
+      - RUNS_DIR=/app/runs
+      - ACTIVE_MODEL=/app/models/production.pt
+      - MODEL_VARIANT=yolov8n.pt
+      - SAVE_ANNOTATIONS=true
+      # Variáveis AMD ROCm para GPU MI25
+      - HSA_OVERRIDE_GFX_VERSION=9.0.0
+      - ROCM_PATH=/opt/rocm
+      - HIP_VISIBLE_DEVICES=0
+      - PYTORCH_ROCM_ARCH=gfx900
+    
+    volumes:
+      - ./app/models:/app/models
+      - ./app/data:/app/data
+      - ./app/runs:/app/runs
+      - /opt/rocm:/opt/rocm:ro
+    
+    ports:
+      - "8012:8012"
+    
+    # Configurações de segurança para GPU AMD
+    security_opt:
+      - seccomp:unconfined
+    
+    # IPC host para melhor performance com GPU
+    ipc: host
+    
+    # Labels Traefik (opcional quando publicar via proxy do Coolify)
+    # labels:
+    #   - "traefik.enable=true"
+    #   - "traefik.http.routers.eletrons.rule=Host(`${DOMAIN}`)"
+    #   - "traefik.http.services.eletrons.loadbalancer.server.port=8012"
