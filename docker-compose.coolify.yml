@@ -36,8 +36,9 @@ services:
       - eletrons-runs:/app/runs
     # Ports are generally not required when using Coolify's built-in proxy/Traefik.
     # Uncomment to expose port directly if needed for local testing.
-    # ports:
-    #   - "8012:8012"
+    
+    ports:
+    - "8012:8012"
 
     # GPU (optional): enable if your Coolify host has NVIDIA drivers and runtime configured.
     # Note: For true GPU acceleration, ensure your Dockerfile base image has CUDA libs,
