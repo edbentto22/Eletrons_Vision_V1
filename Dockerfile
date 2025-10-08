@@ -23,5 +23,12 @@ RUN pip install --upgrade pip setuptools wheel && \
 
 COPY app /app/app
 
-EXPOSE ${PORT:-8000}
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# Expose port (using 8012 to avoid conflict with Coolify's 8000)
+EXPOSE 8012
+
+# Add healthcheck (using port 8012)
+HEALTHCHECK --interval=45s --timeout=10s --start-period=30s --retries=3 \
+  CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8012/health', timeout=5).status==200 else 1)"
+
+# Run the application (using port 8012)
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8012", "--workers", "1"]

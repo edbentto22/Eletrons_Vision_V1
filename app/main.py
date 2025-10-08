@@ -112,25 +112,34 @@ _metrics = {
 }
 
 @app.get("/health", response_model=HealthResponse)
-async def health():
-    cuda = False
+async def health_check():
+    """Health check endpoint for monitoring and load balancers."""
     try:
+        # Check CUDA availability
         import torch  # type: ignore
-        cuda = bool(getattr(torch, 'cuda', None) and torch.cuda.is_available())
-    except Exception:
-        cuda = False
-    versions = {}
-    try:
+        cuda_available = bool(getattr(torch, 'cuda', None) and torch.cuda.is_available())
+        
+        # Get versions
         import ultralytics  # type: ignore
-        versions['ultralytics'] = getattr(ultralytics, '__version__', 'unknown')
-    except Exception:
-        versions['ultralytics'] = 'not-installed'
-    try:
-        import torch  # type: ignore
-        versions['torch'] = getattr(torch, '__version__', 'unknown')
-    except Exception:
-        versions['torch'] = 'not-installed'
-    return HealthResponse(status="ok", cuda_available=cuda, active_model=settings.ACTIVE_MODEL_PATH if os.path.exists(settings.ACTIVE_MODEL_PATH) else None, versions=versions)
+        ultralytics_version = getattr(ultralytics, '__version__', 'unknown')
+        torch_version = getattr(torch, '__version__', 'unknown')
+        
+        return HealthResponse(
+            status="healthy",
+            cuda_available=cuda_available,
+            ultralytics_version=ultralytics_version,
+            torch_version=torch_version
+        )
+    except Exception as e:
+        import logging
+        logger = logging.getLogger("uvicorn.error")
+        logger.error(f"Health check failed: {e}")
+        return HealthResponse(
+            status="unhealthy",
+            cuda_available=False,
+            ultralytics_version="unknown",
+            torch_version="unknown"
+        )
 
 @app.get("/metrics", response_model=MetricsResponse)
 async def metrics():

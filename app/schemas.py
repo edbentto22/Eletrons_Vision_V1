@@ -61,8 +61,8 @@ class PromoteRequest(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     cuda_available: bool
-    active_model: Optional[str]
-    versions: Dict[str, str]
+    ultralytics_version: str
+    torch_version: str
 
 class MetricsResponse(BaseModel):
     inferences: int

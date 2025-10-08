@@ -15,7 +15,7 @@ services:
       APP_NAME: ${APP_NAME:-Eletrons Vision Service}
       # Runtime-only vars; set them in Coolify UI as Runtime, not Build Args
       APP_ENV: ${APP_ENV:-production}
-      PORT: ${PORT:-8000}
+      PORT: 8012
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
       AUTH_TOKEN: ${AUTH_TOKEN}
       ADMIN_EMAIL: ${ADMIN_EMAIL}
@@ -37,8 +37,8 @@ services:
       - eletrons-runs:/app/runs
     # Ports are generally not required when using Coolify's built-in proxy/Traefik.
     # Uncomment to expose port directly if needed for local testing.
-    # ports:
-    #   - "8000:8000"
+    ports:
+      - "8012:8012"
 
     # GPU (optional): enable if your Coolify host has NVIDIA drivers and runtime configured.
     # Note: For true GPU acceleration, ensure your Dockerfile base image has CUDA libs,
@@ -49,18 +49,18 @@ services:
     #   NVIDIA_DRIVER_CAPABILITIES: compute,utility
 
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:${PORT:-8000}/health', timeout=2).status==200 else 1)\""]
-      interval: 30s
-      timeout: 5s
-      retries: 5
-      start_period: 20s
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8012/health', timeout=5).status==200 else 1)\""]
+      interval: 45s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
     # Enable proxy labels only if you prefer to manage Traefik routing via Compose.
-    # Coolify can manage the domain and routing automatically in the UI when you set the APP port to 8000.
+    # Coolify can manage the domain and routing automatically in the UI when you set the APP port to 8012.
     # Example if you want to manage Traefik via Compose:
     # labels:
     #   - "traefik.enable=true"
-    #   - "traefik.http.services.eletrons.loadbalancer.server.port=8000"
+    #   - "traefik.http.services.eletrons.loadbalancer.server.port=8012"
     #   - "traefik.http.routers.eletrons.rule=Host(`${DOMAIN}`)"
     labels: {}
 
