@@ -62,7 +62,10 @@ services:
     #   - "traefik.enable=true"
     #   - "traefik.http.services.eletrons.loadbalancer.server.port=8012"
     #   - "traefik.http.routers.eletrons.rule=Host(`${DOMAIN}`)"
-    labels: {}
+    labels:
+     - "traefik.enable=true"
+     - "traefik.http.services.eletrons.loadbalancer.server.port=8012"
+     - "traefik.http.routers.eletrons.rule=Host(`${DOMAIN}`)"
 
 volumes:
   eletrons-models:
