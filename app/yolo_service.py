@@ -9,6 +9,7 @@ from typing import List, Dict, Any, Optional, Tuple
 import numpy as np
 import cv2
 import httpx
+from threading import RLock
 
 from .config import settings
 from .state import load_config
@@ -176,6 +177,7 @@ async def infer(paths: List[str], conf: float, iou: float, imgsz: int, device: O
 # ---------- Training Management ----------
 _jobs: Dict[str, Dict[str, Any]] = {}
 _job_tasks: Dict[str, asyncio.Task] = {}
+_jobs_lock: RLock = RLock()
 
 
 def register_job_task(job_id: str, task: asyncio.Task) -> None:
@@ -205,8 +207,9 @@ def clear_jobs() -> None:
             pass
         _job_tasks.pop(jid, None)
     # Limpar histórico
-    _jobs.clear()
-    _persist_jobs()
+    with _jobs_lock:
+        _jobs.clear()
+        _persist_jobs()
 
 def _extract_zip(zip_path: str, dest_dir: str) -> str:
     import zipfile
@@ -274,7 +277,8 @@ def _extract_zip(zip_path: str, dest_dir: str) -> str:
 def _persist_jobs():
     path = os.path.join(settings.RUNS_DIR, 'jobs.json')
     try:
-        json.dump(_jobs, open(path, 'w'))
+        with _jobs_lock:
+            json.dump(_jobs, open(path, 'w'))
     except Exception:
         pass
 
@@ -283,25 +287,27 @@ def _load_jobs():
     path = os.path.join(settings.RUNS_DIR, 'jobs.json')
     if os.path.exists(path):
         try:
-            _jobs = json.load(open(path))
+            with _jobs_lock:
+                _jobs = json.load(open(path))
         except Exception:
             _jobs = {}
 
 _load_jobs()
 
 async def start_training(job_id: str, data_yaml_path: str, params: Dict[str, Any]) -> None:
-    _jobs[job_id] = {
-        'job_id': job_id,
-        'status': 'running',
-        'started_at': time.strftime('%Y-%m-%d %H:%M:%S'),
-        'best_pt': None,
-        'metrics': None,
-        'total_epochs': int(params.get('epochs', 50)),
-        'dataset_name': os.path.basename(data_yaml_path).replace('.yaml', ''),
-        'data_yaml_path': data_yaml_path,
-        'train_params': params,
-    }
-    _persist_jobs()
+    with _jobs_lock:
+        _jobs[job_id] = {
+            'job_id': job_id,
+            'status': 'running',
+            'started_at': time.strftime('%Y-%m-%d %H:%M:%S'),
+            'best_pt': None,
+            'metrics': None,
+            'total_epochs': int(params.get('epochs', 50)),
+            'dataset_name': os.path.basename(data_yaml_path).replace('.yaml', ''),
+            'data_yaml_path': data_yaml_path,
+            'train_params': params,
+        }
+        _persist_jobs()
     try:
         from ultralytics import YOLO  # type: ignore
         model_variant = params.get('model_variant') or settings.MODEL_VARIANT
@@ -367,13 +373,16 @@ async def start_training(job_id: str, data_yaml_path: str, params: Dict[str, Any
                 metrics_history['metrics']['mAP50'] = float(metrics.get('metrics/mAP50(B)', 0))
                 metrics_history['metrics']['mAP50_95'] = float(metrics.get('metrics/mAP50-95(B)', 0))
                 
-                _jobs[job_id].update({
-                    'metrics': metrics_history
-                })
-                _persist_jobs()
+                with _jobs_lock:
+                    if job_id in _jobs:
+                        _jobs[job_id].update({
+                            'metrics': metrics_history
+                        })
+                        _persist_jobs()
 
                 # Checar pedido de pausa/parada para encerrar ao fim da época
-                status_now = _jobs.get(job_id, {}).get('status')
+                with _jobs_lock:
+                    status_now = _jobs.get(job_id, {}).get('status')
                 if status_now in ('paused', 'stopped'):
                     try:
                         setattr(trainer, 'stop', True)  # Ultralytics Trainer aceita sinal de parada
@@ -397,36 +406,40 @@ async def start_training(job_id: str, data_yaml_path: str, params: Dict[str, Any
         # Salvar em histórico
         hist_dir = os.path.join(settings.MODELS_DIR, 'history', run_name)
         os.makedirs(hist_dir, exist_ok=True)
-        if best_pt_src and os.path.exists(best_pt_src):
-            shutil.copy2(best_pt_src, os.path.join(hist_dir, 'best.pt'))
-            _jobs[job_id]['best_pt'] = os.path.join(hist_dir, 'best.pt')
-        else:
-            _jobs[job_id]['best_pt'] = None
+        with _jobs_lock:
+            if best_pt_src and os.path.exists(best_pt_src):
+                shutil.copy2(best_pt_src, os.path.join(hist_dir, 'best.pt'))
+                _jobs[job_id]['best_pt'] = os.path.join(hist_dir, 'best.pt')
+            else:
+                _jobs[job_id]['best_pt'] = None
         
         # Decidir status final
-        final_status = _jobs.get(job_id, {}).get('status', 'running')
-        if final_status == 'running':
-            _jobs[job_id].update({
-                'status': 'completed',
-                'finished_at': time.strftime('%Y-%m-%d %H:%M:%S'),
-                'metrics': metrics_history
-            })
-        elif final_status == 'stopped':
-            _jobs[job_id].update({
-                'status': 'stopped',
-                'finished_at': time.strftime('%Y-%m-%d %H:%M:%S'),
-                'metrics': metrics_history
-            })
-        else:
-            # paused: manter sem finished_at
-            _jobs[job_id].update({
-                'status': 'paused',
-                'metrics': metrics_history
-            })
-        _persist_jobs()
+        with _jobs_lock:
+            final_status = _jobs.get(job_id, {}).get('status', 'running')
+            if final_status == 'running':
+                _jobs[job_id].update({
+                    'status': 'completed',
+                    'finished_at': time.strftime('%Y-%m-%d %H:%M:%S'),
+                    'metrics': metrics_history
+                })
+            elif final_status == 'stopped':
+                _jobs[job_id].update({
+                    'status': 'stopped',
+                    'finished_at': time.strftime('%Y-%m-%d %H:%M:%S'),
+                    'metrics': metrics_history
+                })
+            else:
+                # paused: manter sem finished_at
+                _jobs[job_id].update({
+                    'status': 'paused',
+                    'metrics': metrics_history
+                })
+            _persist_jobs()
     except Exception as e:
-        _jobs[job_id].update({'status': 'failed', 'error': str(e), 'finished_at': time.strftime('%Y-%m-%d %H:%M:%S')})
-        _persist_jobs()
+        with _jobs_lock:
+            if job_id in _jobs:
+                _jobs[job_id].update({'status': 'failed', 'error': str(e), 'finished_at': time.strftime('%Y-%m-%d %H:%M:%S')})
+            _persist_jobs()
 
 async def validate_model(data_yaml_path: str, device: Optional[str] = None) -> Dict[str, Any]:
     from ultralytics import YOLO  # type: ignore

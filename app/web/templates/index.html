@@ -4,48 +4,97 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>{{ app_name }}</title>
+  <script>(function(){try{const saved=localStorage.getItem('ev_theme')||'system';const prefersDark=window.matchMedia('(prefers-color-scheme: dark)').matches;const isDark=(saved==='dark')||(saved==='system'&&prefersDark);document.documentElement.classList.toggle('dark',isDark);document.documentElement.setAttribute('data-theme',isDark?'dark':'light');}catch(e){}})();</script>
+  <script>window.tailwind=window.tailwind||{};tailwind.config={darkMode:'class'};</script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = { theme: { extend: { fontFamily: { sans: ['Poppins','ui-sans-serif','system-ui','-apple-system','Segoe UI','Roboto','Ubuntu','Cantarell','sans-serif'] } } } }
+  </script>
+  <script>(function(){try{document.documentElement.classList.remove('dark');document.documentElement.setAttribute('data-theme','light');localStorage.setItem('ev_theme','light');}catch(e){}})();</script>
   <link rel="stylesheet" href="/static/style.css" />
-</head>
-<body>
-  <header>
-    <h1>{{ app_name }}</h1>
-    <p>Modelo ativo: {{ active_model if active_model else 'Nenhum (usando variante padrão)' }}</p>
+  <link rel="icon" href="/static/ev_icon.svg" type="image/svg+xml" />
+
+<body class="font-sans bg-white text-gray-900">
+  <header class="flex items-center justify-between p-6 border-b border-gray-200">
+    <div>
+      <h1 class="text-2xl font-semibold tracking-tight">{{ app_name }}</h1>
+      <p class="text-sm text-gray-600">Modelo ativo: {{ active_model if active_model else 'Nenhum (usando variante padrão)' }}</p>
+    </div>
+    <nav class="flex items-center gap-2">
+      <a href="/panel" class="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50">Painel</a>
+      <a href="/settings" class="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50">Configurações</a>
+      <a href="/docs" target="_blank" class="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50">API</a>
+      <button id="themeToggleIndex" type="button" class="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50" title="Tema fixo claro">
+         <span class="sun">☀️</span>
+        <span class="moon hidden">🌙</span>
+       </button>
+    </nav>
   </header>
-  <main>
+  <main class="p-6 space-y-8">
     <section>
-      <h2>Últimas detecções</h2>
-      <div class="grid">
+      <h2 class="text-xl font-semibold mb-4">Últimas detecções</h2>
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {% for det in detections %}
-        <div class="card">
+        <div class="rounded-lg border border-gray-200 overflow-hidden">
           {% if det.annotated_url %}
-          <img src="{{ det.annotated_url }}" alt="Detecção" />
+          <img src="{{ det.annotated_url }}" alt="Detecção" class="w-full h-auto" />
           {% endif %}
-          <pre class="json">{{ det | tojson(indent=2) }}</pre>
+          <pre class="p-3 text-xs bg-gray-50 overflow-x-auto">{{ det | tojson(indent=2) }}</pre>
         </div>
         {% endfor %}
       </div>
     </section>
     <section>
-      <h2>Fila de Jobs</h2>
-      <table>
-        <thead>
-          <tr><th>Job ID</th><th>Status</th><th>Best.pt</th><th>Métricas</th></tr>
-        </thead>
-        <tbody>
-          {% for job in jobs %}
-          <tr>
-            <td>{{ job.job_id }}</td>
-            <td>{{ job.status }}</td>
-            <td>{{ job.best_pt }}</td>
-            <td><pre class="json">{{ job.metrics | tojson(indent=2) }}</pre></td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+      <h2 class="text-xl font-semibold mb-4">Fila de Jobs</h2>
+      <div class="overflow-x-auto">
+        <table class="min-w-full text-sm border border-gray-200">
+          <thead class="bg-gray-50">
+            <tr>
+              <th class="px-3 py-2 text-left">Job ID</th>
+              <th class="px-3 py-2 text-left">Status</th>
+              <th class="px-3 py-2 text-left">Best.pt</th>
+              <th class="px-3 py-2 text-left">Métricas</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for job in jobs %}
+            <tr class="border-t border-gray-200">
+              <td class="px-3 py-2">{{ job.job_id }}</td>
+              <td class="px-3 py-2">{{ job.status }}</td>
+              <td class="px-3 py-2">{{ job.best_pt }}</td>
+              <td class="px-3 py-2"><pre class="text-xs">{{ job.metrics | tojson(indent=2) }}</pre></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
     </section>
   </main>
-  <footer>
-    <p>Eletrons Vision Service - YOLOv8 + FastAPI</p>
+  <footer class="p-6 text-sm text-gray-600 border-t border-gray-200">
+    Eletrons Vision Service - YOLOv8 + FastAPI
   </footer>
+
+  <script>
+    (function(){
+      function applyTheme(mode){
+        const prefersDark=window.matchMedia('(prefers-color-scheme: dark)').matches;
+        const isDark=(mode==='dark')||(mode==='system'&&prefersDark);
+        document.documentElement.classList.toggle('dark',isDark);
+        document.documentElement.setAttribute('data-theme',isDark?'dark':'light');
+        const sun=document.querySelector('#themeToggleIndex .sun');
+        const moon=document.querySelector('#themeToggleIndex .moon');
+        if(sun&&moon){ if(isDark){ sun.classList.add('hidden'); moon.classList.remove('hidden'); } else { sun.classList.remove('hidden'); moon.classList.add('hidden'); } }
+      }
+      const saved=localStorage.getItem('ev_theme')||'system';
+      applyTheme(saved);
+      const btn=document.getElementById('themeToggleIndex');
+      if(btn){ btn.addEventListener('click',()=>{ const cur=localStorage.getItem('ev_theme')||'system'; const next= cur==='light' ? 'dark' : (cur==='dark' ? 'system' : 'light'); localStorage.setItem('ev_theme',next); applyTheme(next);}); }
+      try{ window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{ const mode=localStorage.getItem('ev_theme')||'system'; applyTheme(mode);}); }catch(e){}
+    })();
+  </script>
++  <script>document.getElementById('themeToggleIndex')?.addEventListener('click',()=>alert('Tema fixo: claro'));</script>
 </body>
 </html>
