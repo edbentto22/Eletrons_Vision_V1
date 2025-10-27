@@ -121,11 +121,20 @@ class TrainCreateRequest(BaseModel):
     """Cria um job de treinamento via JSON.
     Uma das opções deve ser fornecida:
     - data_yaml_path: caminho absoluto para um data.yaml já disponível no servidor
-    - zip_url: URL pública de um arquivo .zip contendo dataset; será baixado e extraído
+    - dataset_url: URL assinada de um arquivo .zip contendo dataset (Supabase Storage)
+    (zip_url permanece para compatibilidade retroativa)
     """
+    # Identificador externo do job (fornecido pelo app)
+    job_id: Optional[str] = None
     # Fonte de dados
     data_yaml_path: Optional[str] = None
+    dataset_url: Optional[str] = None
     zip_url: Optional[str] = Field(default=None)
+    # Metadados e integração
+    model_name: Optional[str] = None
+    base_model: Optional[str] = None  # mapeia para model_variant internamente
+    callback_url: Optional[str] = None
+    callback_token: Optional[str] = None
     # Parâmetros de treino (mesmos de TrainParams)
     epochs: int = 50
     imgsz: int = 640
@@ -139,5 +148,6 @@ class TrainCreateRequest(BaseModel):
 class TrainCreateResponse(BaseModel):
     job_id: str
     status: str
-    data_yaml_path: str
+    message: Optional[str] = None
+    data_yaml_path: Optional[str] = None
     train_params: Dict[str, Any]

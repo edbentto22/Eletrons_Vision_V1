@@ -80,29 +80,14 @@ async def require_csrf_if_session(request: Request):
     if not auth and request.cookies.get(_cookie_kwargs.get("session_cookie", "ev_session")):
         await verify_csrf(request)
 
-# Security dependencies
+# Security dependencies (disabled: no-op)
 async def require_auth(request: Request):
-    if not settings.AUTH_TOKEN:
-        # If no token based auth configured, allow if session authenticated
-        user = request.session.get("user")
-        if not user:
-            raise HTTPException(status_code=401, detail="Unauthorized")
-        return
-    auth = request.headers.get("Authorization", "")
-    if not auth.startswith("Bearer ") or auth.split(" ", 1)[1] != settings.AUTH_TOKEN:
-        # Fall back to session auth
-        user = request.session.get("user")
-        if not user:
-            raise HTTPException(status_code=401, detail="Unauthorized")
-    # IP whitelist if configured
-    client_ip = request.client.host if request.client else None
-    if settings.IP_WHITELIST and client_ip not in settings.IP_WHITELIST:
-        raise HTTPException(status_code=403, detail="Forbidden IP")
+    # Autenticação desativada por solicitação: sempre permitir
+    return
 
-# Enforce secure admin password in production
-if settings.APP_ENV.lower() in {"production", "prod", "staging"}:
-    if not settings.ADMIN_PASSWORD_HASH:
-        raise RuntimeError("ADMIN_PASSWORD_HASH é obrigatório em produção. Não use ADMIN_PASSWORD em produção.")
+# Autenticação desativada: não impor ADMIN_PASSWORD_HASH em nenhum ambiente
+# (Atenção: em ambientes públicos, considere reativar proteção)
+pass
 
 # Metrics
 _metrics = {
@@ -233,15 +218,14 @@ async def get_ui_config():
     cfg = load_config()
     return UIConfigResponse(**cfg)
 
-@app.post("/config", response_model=UIConfigResponse, dependencies=[Depends(require_auth), Depends(require_csrf_if_session)])
+@app.post("/config", response_model=UIConfigResponse)
 async def set_ui_config(req: UIConfigRequest):
     cfg = save_config(req.model_dump(exclude_none=True))
     return UIConfigResponse(**cfg)
 
 @app.get("/panel", include_in_schema=False)
 async def panel(request: Request):
-    if not request.session.get("user"):
-        return RedirectResponse(url="/login", status_code=303)
+    # Acesso liberado ao painel sem sessão
     cfg = load_config()
     # Load recent detections
     log_path = os.path.join(settings.DATA_DIR, 'infer', 'log.json')
@@ -266,7 +250,7 @@ async def panel(request: Request):
     await issue_csrf(response)
     return response
 
-@app.post("/panel/upload", include_in_schema=False, dependencies=[Depends(require_auth), Depends(require_csrf_if_session)])
+@app.post("/panel/upload", include_in_schema=False)
 async def panel_upload(
     request: Request,
     dataset: UploadFile = File(...),
@@ -275,10 +259,7 @@ async def panel_upload(
     batch: int = Form(16),
     csrf_token: str = Form(None)
 ):
-    # Verifica CSRF apenas quando a autenticação é via sessão (sem Bearer)
-    auth_hdr = request.headers.get("Authorization", "")
-    if not auth_hdr.startswith("Bearer "):
-        await verify_csrf(request, csrf_token)
+    # Autenticação e CSRF desativados
 
     # Criar job_id e diretório de extração antecipadamente
     job_id = uuid.uuid4().hex
@@ -654,9 +635,7 @@ async def login_page(request: Request):
 
 @app.get("/", include_in_schema=False)
 async def root(request: Request):
-    """Redireciona a raiz para /login (anônimo) ou /panel (logado)."""
-    if not request.session.get("user"):
-        return RedirectResponse(url="/login", status_code=303)
+    # Autenticação removida: sempre redirecionar para /panel
     return RedirectResponse(url="/panel", status_code=303)
 
 @app.post("/login", include_in_schema=False)
@@ -794,19 +773,19 @@ async def create_training_endpoint(payload: TrainCreateRequest = Body(...)):
     """Cria um job de treinamento via JSON.
     Requer Authorization: Bearer <AUTH_TOKEN> quando configurado; caso contrário aceita sessão.
     - Se `data_yaml_path` for fornecido, usa diretamente.
-    - Se `zip_url` for fornecido, baixa o ZIP para data/zips e extrai para data/extracted/<job_id>.
-    Retorna 201 com {job_id, status, data_yaml_path, train_params}.
+    - Se `dataset_url` ou `zip_url` for fornecido, baixa o ZIP para data/zips e extrai para data/extracted/<job_id>.
+    Retorna 201 com {job_id, status, message, data_yaml_path, train_params}.
     """
     # Validar fonte
     data_yaml_path: Optional[str] = payload.data_yaml_path
-    zip_url: Optional[str] = payload.zip_url
+    zip_url: Optional[str] = payload.dataset_url or payload.zip_url
     if not data_yaml_path and not zip_url:
-        raise HTTPException(status_code=422, detail="Forneça data_yaml_path ou zip_url")
+        raise HTTPException(status_code=422, detail="Forneça data_yaml_path ou dataset_url/zip_url")
     if data_yaml_path and zip_url:
-        raise HTTPException(status_code=422, detail="Use apenas um: data_yaml_path OU zip_url")
+        raise HTTPException(status_code=422, detail="Use apenas um: data_yaml_path OU dataset_url/zip_url")
 
-    # Criar job_id e diretórios
-    job_id = uuid.uuid4().hex
+    # Criar/usar job_id e diretórios
+    job_id = payload.job_id or uuid.uuid4().hex
     extract_dir = os.path.join(settings.DATA_DIR, "extracted", job_id)
     os.makedirs(extract_dir, exist_ok=True)
 
@@ -823,7 +802,6 @@ async def create_training_endpoint(payload: TrainCreateRequest = Body(...)):
                 async with client.stream("GET", zip_url) as resp:
                     if resp.status_code != 200:
                         raise HTTPException(status_code=400, detail=f"Falha ao baixar ZIP: HTTP {resp.status_code}")
-                    content_type = (resp.headers.get("content-type") or "").lower()
                     # Não exigir content-type estrito; apenas avisar
                     size = 0
                     with open(zip_path, "wb") as out:
@@ -867,7 +845,10 @@ async def create_training_endpoint(payload: TrainCreateRequest = Body(...)):
         "device": payload.device,
         "pretrained": payload.pretrained,
         "resume": payload.resume,
-        "model_variant": payload.model_variant,
+        "model_variant": payload.base_model or payload.model_variant,
+        "model_name": payload.model_name,
+        "callback_url": payload.callback_url,
+        "callback_token": payload.callback_token,
     }
     if not data_yaml_path:
         raise HTTPException(status_code=400, detail="data_yaml_path não definido após processamento")
@@ -878,6 +859,7 @@ async def create_training_endpoint(payload: TrainCreateRequest = Body(...)):
     return JSONResponse(status_code=201, content={
         "job_id": job_id,
         "status": "running",
+        "message": "training started",
         "data_yaml_path": data_yaml_path,
         "train_params": params,
     })
@@ -894,3 +876,22 @@ async def promote_model_endpoint(req: PromoteRequest = Body(...)):
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Falha ao promover modelo: {str(e)}")
+
+@app.get("/download/model/{job_id}", dependencies=[Depends(require_auth)])
+async def download_model(job_id: str):
+    """Disponibiliza o arquivo best.pt do job para download.
+    Procura primeiro em models/history/{job_id}/best.pt, depois em runs/.../weights/best.pt.
+    """
+    # Primeiro tenta o histórico
+    candidate_hist = os.path.join(settings.MODELS_DIR, 'history', job_id, 'best.pt')
+    path = candidate_hist if os.path.exists(candidate_hist) else None
+    if not path:
+        candidate_runs1 = os.path.join(settings.RUNS_DIR, 'detect', job_id, 'weights', 'best.pt')
+        candidate_runs2 = os.path.join(settings.RUNS_DIR, job_id, 'weights', 'best.pt')
+        if os.path.exists(candidate_runs1):
+            path = candidate_runs1
+        elif os.path.exists(candidate_runs2):
+            path = candidate_runs2
+    if not path or not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="best.pt não encontrado para este job")
+    return FileResponse(path, media_type="application/octet-stream", filename="best.pt")

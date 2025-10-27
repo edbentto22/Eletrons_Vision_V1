@@ -72,6 +72,16 @@ async def send_n8n_webhook(payload: Dict[str, Any]) -> None:
          from .state import log_webhook
          log_webhook("out", url, 0, {"error": str(e)})
 
+# Callback HTTP genérico para progresso/resultado de treino (Supabase Edge Function)
+async def _post_callback(callback_url: str, token: str, payload: Dict[str, Any]) -> None:
+    try:
+        headers = {"Authorization": token}
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            await client.post(callback_url, headers=headers, json=payload)
+    except Exception:
+        # Silencioso para não interromper o fluxo de treino por falha de callback
+        pass
+
 def _result_to_boxes(result: Any) -> Tuple[List[Dict[str, Any]], int, int]:
      boxes_out: List[Dict[str, Any]] = []
      # Ultralytics Results: result.boxes.xyxy, result.boxes.conf, result.boxes.cls
@@ -308,6 +318,7 @@ async def start_training(job_id: str, data_yaml_path: str, params: Dict[str, Any
             'train_params': params,
         }
         _persist_jobs()
+    start_ts = time.time()
     try:
         from ultralytics import YOLO  # type: ignore
         model_variant = params.get('model_variant') or settings.MODEL_VARIANT
@@ -373,12 +384,41 @@ async def start_training(job_id: str, data_yaml_path: str, params: Dict[str, Any
                 metrics_history['metrics']['mAP50'] = float(metrics.get('metrics/mAP50(B)', 0))
                 metrics_history['metrics']['mAP50_95'] = float(metrics.get('metrics/mAP50-95(B)', 0))
                 
+                total_epochs = int(params.get('epochs', 50))
+                current_epoch = trainer.epoch + 1
+                progress = current_epoch / max(total_epochs, 1)
+                
                 with _jobs_lock:
                     if job_id in _jobs:
                         _jobs[job_id].update({
-                            'metrics': metrics_history
+                            'metrics': metrics_history,
+                            'current_epoch': current_epoch,
+                            'progress': float(progress)
                         })
                         _persist_jobs()
+
+                # Enviar callback de progresso
+                cb_url = params.get('callback_url')
+                cb_token = params.get('callback_token')
+                if cb_url and cb_token:
+                    payload = {
+                        "job_id": job_id,
+                        "status": "training",
+                        "progress": float(progress),
+                        "epoch": current_epoch,
+                        "total_epochs": total_epochs,
+                        "metrics": {
+                            "box_loss": metrics_history.get('train_box_loss', 0),
+                            "cls_loss": metrics_history.get('train_cls_loss', 0),
+                            "mAP50": metrics_history['metrics'].get('mAP50', 0),
+                            "mAP50-95": metrics_history['metrics'].get('mAP50_95', 0),
+                        },
+                        "timestamp": time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+                    }
+                    try:
+                        asyncio.create_task(_post_callback(cb_url, cb_token, payload))
+                    except Exception:
+                        pass
 
                 # Checar pedido de pausa/parada para encerrar ao fim da época
                 with _jobs_lock:
@@ -435,11 +475,71 @@ async def start_training(job_id: str, data_yaml_path: str, params: Dict[str, Any
                     'metrics': metrics_history
                 })
             _persist_jobs()
+        
+        # Callback de conclusão (somente quando concluído)
+        cb_url = params.get('callback_url')
+        cb_token = params.get('callback_token')
+        if cb_url and cb_token:
+            training_time_seconds = int(time.time() - start_ts)
+            final_map50 = metrics_history['metrics'].get('mAP50')
+            final_map50_95 = metrics_history['metrics'].get('mAP50_95')
+            per_cls = metrics_history['metrics'].get('per_class', {})
+            prec_vals = [v.get('precision', 0) for v in per_cls.values()] if per_cls else []
+            rec_vals = [v.get('recall', 0) for v in per_cls.values()] if per_cls else []
+            precision = float(np.mean(prec_vals)) if prec_vals else None
+            recall = float(np.mean(rec_vals)) if rec_vals else None
+            if final_status == 'completed':
+                payload = {
+                    "job_id": job_id,
+                    "status": "completed",
+                    "progress": 1.0,
+                    "model_url": _abs_url(f"/download/model/{job_id}"),
+                    "final_metrics": {
+                        "mAP50": final_map50,
+                        "mAP50-95": final_map50_95,
+                        "precision": precision,
+                        "recall": recall
+                    },
+                    "training_time_seconds": training_time_seconds,
+                    "timestamp": time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+                }
+                try:
+                    asyncio.create_task(_post_callback(cb_url, cb_token, payload))
+                except Exception:
+                    pass
+            elif final_status == 'stopped':
+                # Enviar erro padronizado quando parada manual
+                payload = {
+                    "job_id": job_id,
+                    "status": "failed",
+                    "error": "stopped_by_user",
+                    "error_details": "Training stopped manually",
+                    "timestamp": time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+                }
+                try:
+                    asyncio.create_task(_post_callback(cb_url, cb_token, payload))
+                except Exception:
+                    pass
     except Exception as e:
         with _jobs_lock:
             if job_id in _jobs:
                 _jobs[job_id].update({'status': 'failed', 'error': str(e), 'finished_at': time.strftime('%Y-%m-%d %H:%M:%S')})
             _persist_jobs()
+        # Callback de erro
+        cb_url = params.get('callback_url')
+        cb_token = params.get('callback_token')
+        if cb_url and cb_token:
+            payload = {
+                "job_id": job_id,
+                "status": "failed",
+                "error": str(e),
+                "error_details": "Exception during training",
+                "timestamp": time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+            }
+            try:
+                asyncio.create_task(_post_callback(cb_url, cb_token, payload))
+            except Exception:
+                pass
 
 async def validate_model(data_yaml_path: str, device: Optional[str] = None) -> Dict[str, Any]:
     from ultralytics import YOLO  # type: ignore

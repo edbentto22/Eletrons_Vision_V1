@@ -1,0 +1,15 @@
+cabo_partido
+caixa_derivacao
+caixa_emenda_fibra
+camera_monitoramento
+coaxial
+cordoalha
+drop
+fibra_optica
+nivel_fixacao1
+nivel_fixacao2
+poste
+rede_telecom_altura_mt
+rede_telecom_altura_rede_bt
+reserva_tecnica
+tronco_metalico
